@@ -1,0 +1,40 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# msmi
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+The goal of msmi is to use tools from multiple imputation to handle missing data
+present in multistate models subject to censoring and estimate state occupation probabilities from these data.
+
+## Installation
+
+You can install the development version of msmi from [GitHub](https://github.com/) with:
+
+``` r
+# install.packages("devtools")
+devtools::install_github("rtucker8/msmi")
+```
+
+## Usage
+
+This is a basic example which shows you how to solve a common problem:
+
+```{r example}
+library(msmi)
+## basic example code
+```
