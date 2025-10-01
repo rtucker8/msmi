@@ -5,7 +5,7 @@
 \title{Create multiple imputed datasets for data arising from multi-state models subject to censoring}
 \usage{
 msmi.impute(
-  d,
+  dat,
   M,
   n.states = 3,
   prefix.states = c("event", "t"),
@@ -13,13 +13,15 @@ msmi.impute(
 )
 }
 \arguments{
-\item{d}{a dataframe with one row per subject and columns corresponding to the time and event indicators for each state transition}
+\item{dat}{a dataframe with one row per subject and columns corresponding to the time and event indicators for each state transition.
+The column names for the time and event indicators should be in the format specified by prefix.states, specifically
+event\if{html}{\out{<i>}} and t\if{html}{\out{<i>}} for i = 1, ..., n.states-1}
 
 \item{M}{an integer, the number of imputations}
 
 \item{n.states}{an integer, the number of states in the multistate model}
 
-\item{prefix.states}{a character vector of length 2, specify the prefix for the event and time columns in the d}
+\item{prefix.states}{a character vector of length 2, specify the prefix for the event and time columns in the d in that order}
 
 \item{method}{a character string, either "marginal" or "cox", indicating which method to use for the second layer of imputation}
 }
@@ -28,4 +30,7 @@ A list of length M, where each element is a data frame with imputed times for ce
 }
 \description{
 Create multiple imputed datasets for data arising from multi-state models subject to censoring
+}
+\examples{
+msmi.impute(dat = sim.data, M=10, n.states = 3, prefix.states = c("event", "t"), method="cox")
 }
