@@ -7,7 +7,6 @@
 #' @param d A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran
 #'
 #' @returns A data frame with imputed times for event2 where event2 was censored
-#' @export
 cox_mi <- function(d) {
 
   #create ID column
@@ -67,7 +66,6 @@ cox_mi <- function(d) {
 #' @param d A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran
 #'
 #' @returns A data frame with imputed times for event2 where event2 was censored
-#' @export
 marginal_mi <- function(d) {
 
   #Add an ID column
@@ -116,8 +114,6 @@ marginal_mi <- function(d) {
 
   return(ipd)
 }
-
-
 
 
 # Wrapper Function --------------------------------------------------------
@@ -177,8 +173,8 @@ msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), m
                                 event.first = dplyr::case_when(t1 < t2 & event1 == 1 ~ 1,
                                                                !(t1 < t2) & event2 == 1 ~ 2,
                                                                TRUE ~ 0))
-  #multiple imputations for time to first event using mici::mici.impute
-  d.imp1 <- mici::mici.impute(t.first, event.first, data=d.comp, scheme = "KMI", M = M)
+  #multiple imputations for time to first event using mici.impute
+  d.imp1 <- mici.impute(t.first, event.first, data=d.comp, scheme = "KMI", M = M)
 
   #put data back into the original format for second layer of imputation
   d.imp1 <- purrr::map(d.imp1, function(x) {

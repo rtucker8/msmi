@@ -18,7 +18,6 @@ You can install the development version of msmi from
 
 ``` r
 if (!require(remotes)) {install.packages("remotes")}
-remotes::install_github("elizabethchase/mici")
 remotes::install_github("rtucker8/msmi")
 ```
 
@@ -38,11 +37,11 @@ head(sim.data)
 #> 5  5 2.422337      1  3.928518      0  2.422337 10.997895 10.222074
 #> 6  6 4.017424      0  4.017424      1  4.879177  4.017424        NA
 head(msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")[[1]])
-#>          t1 event1        t2 event2
-#> 1  1.082190      1  3.758061      1
-#> 2  3.725816      1 14.185732      1
-#> 3  7.756142      1 10.777875      1
-#> 4  2.986981      1 13.446897      1
-#> 5  2.422337      1 12.882253      1
-#> 6 10.631872      0 10.631872      1
+#>         t1 event1        t2 event2
+#> 1 1.082190      1  2.270309      1
+#> 2 3.725816      1 14.185732      1
+#> 3 3.117752      1  7.148860      1
+#> 4 2.887709      1 13.347625      1
+#> 5 2.422337      1  8.074251      1
+#> 6 4.287278      1  5.449911      1
 ```

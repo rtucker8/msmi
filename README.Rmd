@@ -27,7 +27,6 @@ You can install the development version of msmi from [GitHub](https://github.com
 
 ``` r
 if (!require(remotes)) {install.packages("remotes")}
-remotes::install_github("elizabethchase/mici")
 remotes::install_github("rtucker8/msmi")
 ```
 

@@ -15,7 +15,6 @@ BugReports: https://github.com/rtucker8/msmi/issues
 Imports:
     dplyr,
     magrittr,
-    mici,
     purrr,
     survival
 Depends: 
