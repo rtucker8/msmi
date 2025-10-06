@@ -134,12 +134,12 @@ marginal_mi <- function(d) {
 #' @param n.states an integer, the number of states in the multistate model
 #' @param prefix.states a character vector of length 2, specify the prefix for the event and time columns in the d in that order
 #' @param method a character string, either "marginal" or "cox", indicating which method to use for the second layer of imputation
-#'
-#' @returns A list of length M, where each element is a data frame with imputed times for censored events
+#' @param seed an integer, the seed for random number generation
 #' @examples
-#' msmi.impute(dat = sim.data, M=10, n.states = 3, prefix.states = c("event", "t"), method="cox")
+#' msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")
+#' @returns A list of length M, where each element is a data frame with imputed times for censored events
 #' @export
-msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), method = "marginal") {
+msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), method = "marginal", seed = sample(1:.Machine$integer.max, size=1)) {
 
   #Check inputs
   if (n.states != 3) {
@@ -154,6 +154,9 @@ msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), m
   if (!(M == floor(M))) {
     stop("M must be an integer")
   }
+
+  #set seed
+  set.seed(seed)
 
   #Create standardized dataset d from user provided dataframe dat
   d <- data.frame(row.names = 1:nrow(dat))

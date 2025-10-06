@@ -9,7 +9,8 @@ msmi.impute(
   M,
   n.states = 3,
   prefix.states = c("event", "t"),
-  method = "marginal"
+  method = "marginal",
+  seed = sample(1:.Machine$integer.max, size = 1)
 )
 }
 \arguments{
@@ -24,6 +25,8 @@ event\if{html}{\out{<i>}} and t\if{html}{\out{<i>}} for i = 1, ..., n.states-1}
 \item{prefix.states}{a character vector of length 2, specify the prefix for the event and time columns in the d in that order}
 
 \item{method}{a character string, either "marginal" or "cox", indicating which method to use for the second layer of imputation}
+
+\item{seed}{an integer, the seed for random number generation}
 }
 \value{
 A list of length M, where each element is a data frame with imputed times for censored events
@@ -32,5 +35,5 @@ A list of length M, where each element is a data frame with imputed times for ce
 Create multiple imputed datasets for data arising from multi-state models subject to censoring
 }
 \examples{
-msmi.impute(dat = sim.data, M=10, n.states = 3, prefix.states = c("event", "t"), method="cox")
+msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")
 }
