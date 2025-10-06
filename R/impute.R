@@ -175,7 +175,7 @@ msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), m
   #prepare data in competing events structure for time to first event
   d.comp <- d %>% dplyr::mutate(t.first = pmin(t1, t2),
                                 event.first = dplyr::case_when(t1 < t2 & event1 == 1 ~ 1,
-                                                               t2 < t1 & event2 == 1 ~ 2,
+                                                               !(t1 < t2) & event2 == 1 ~ 2,
                                                                TRUE ~ 0))
   #multiple imputations for time to first event using mici::mici.impute
   d.imp1 <- mici::mici.impute(t.first, event.first, data=d.comp, scheme = "KMI", M = M)
