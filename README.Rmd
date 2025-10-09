@@ -35,7 +35,9 @@ remotes::install_github("rtucker8/msmi")
 This is a basic example which shows you how to use the `msmi.impute` function with simulated data `sim.data`:
 
 ``` {r}
-library(msmi)
-head(sim.data)
-head(msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")[[1]])
+library(msmi) 
+
+head(sim.data, 8)
+
+head(msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")[[1]],8)
 ```
