@@ -26,25 +26,42 @@ cox_mi <- function(d) {
   cox_model <- survival::coxph(survival::Surv(t2-t1, event2) ~ t1, data=u)
   surv_summary <- summary(survival::survfit(cox_model, newdata = dd))
   surv_probs <- surv_summary$surv[dim(surv_summary$surv)[1], ]
+
   surv_times <- surv_summary$time
+  surv_times_list <- replicate(length(surv_probs), surv_times, simplify = FALSE)
+
   prob_diffs <- apply(surv_summary$surv, 2, function(x) -diff(c(1, x)))
+  prob_diffs_list <- split(prob_diffs, col(prob_diffs))
 
   # Handle tail probability (if survival doesn't reach 0)
-  if (max(surv_probs) > 0) {
-    prob_diffs <- rbind(prob_diffs, surv_probs)
-    surv_times <- c(surv_times, max(u$sojourn12) + 1)
+  tail.probs <- function(tail, probs) {
+    if (tail > 0) {
+      probs <- c(probs, tail)
+    }
+    return(probs)
   }
+
+  tail.times <- function(tail, times) {
+    if (tail > 0) {
+      times <- c(times, max(u$sojourn12) + 1)
+    }
+    return(times)
+  }
+
+  prob_diffs <- Map(tail.probs, tail = surv_probs, probs = prob_diffs_list) #output is a list of length nrow(dd)
+
+  surv_times <- Map(tail.times, surv_probs, surv_times_list) #output is a list of length nrow(dd)
 
   # Impute times for censored individuals
   cts <- NULL
   for (jj in 1:length(xt)) {
     # Find times greater than censoring time
-    sub <- surv_times > xt[jj]
+    sub <- surv_times[[jj]] > xt[jj]
     # Sample time from illness to death
     if (sum(sub) > 1) {
-      cts[jj] <- resample(surv_times[sub], 1,replace=TRUE, prob = prob_diffs[sub, jj])
+      cts[jj] <- resample(surv_times[[jj]][sub], 1,replace=TRUE, prob = prob_diffs[[jj]][sub])
     } else if(sum(sub) == 1){
-      cts[jj] <- surv_times[sub]
+      cts[jj] <- surv_times[[jj]][sub]
     } else {
       cts[jj] <- max(u$sojourn12) + 1 #shadow event time
     }

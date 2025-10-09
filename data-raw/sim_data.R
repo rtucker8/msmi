@@ -87,7 +87,7 @@ simulate_illness_death <- function(n, beta = 0,
 
 }
 # Generate the dataset ------------------------------------------------
-sim.data <- simulate_illness_death(n = 100, beta = log(0.5),
+sim.data <- simulate_illness_death(n = 100, beta = log(1),
                                  shape01 = 1.3, median01 = 3,
                                  shape02 = 1.5, median02 = 8,
                                  shape12 = 2, median12 = 3,
