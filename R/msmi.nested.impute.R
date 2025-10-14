@@ -158,7 +158,8 @@ nested_marginal_mi <- function(d, m, r) {
 #' @param method a character string, either "marginal" or "cox", indicating which method to use for the second layer of imputation
 #' @param seed an integer, the seed for random number generation
 #' @examples
-#' msmi.nested.impute(sim.data, M = 5, R=3, n.states = 3, prefix.states = c("event", "t"), method = "marginal")
+#' msmi.nested.impute(sim.data, M = 5, R=3, n.states = 3, prefix.states = c("event", "t"),
+#' method = "marginal")
 #' @returns A nested list with MxR total entries, where each element is a data frame with imputed times for censored events
 #' @export
 msmi.nested.impute <- function(dat, M, R = 1, n.states = 3, prefix.states = c("event", "t"), method = "marginal", seed = sample(1:.Machine$integer.max, size=1)) {
@@ -234,10 +235,13 @@ msmi.nested.impute <- function(dat, M, R = 1, n.states = 3, prefix.states = c("e
   if (method == "cox") {
     d.imp2 <- purrr::imap(d.imp1, function(d, m) {
       purrr::map(1:R, function(r) {
-        nested_marginal_cox(d, m, r)
+        nested_cox_mi(d, m, r)
       })
     })
   }
+
+  #return(purrr:list_flatten(d.imp2)) #return a flattened list with MxR imputed datasets
+  #return(dplyr::bind_rows(d.imp2)).  #return one dataframe with multuiply imputated datasets stacked
 
   return(d.imp2)
 }

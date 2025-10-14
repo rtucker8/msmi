@@ -2,6 +2,7 @@
 
 export("%>%")
 export(msmi.impute)
+export(msmi.nested.impute)
 import(dplyr)
 import(survival)
 importFrom(magrittr,"%>%")
