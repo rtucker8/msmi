@@ -5,9 +5,11 @@
 #' Layer 2 Imputation: Cox Model (Conditional) Approach
 #'
 #' @param d A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran
+#' @param m An integer, the nest id for the nested imputation structure
+#' @param r An integer, the impute id for the nested imputation structure
 #'
 #' @returns A data frame with imputed times for event2 where event2 was censored
-cox_mi <- function(d) {
+nested_cox_mi <- function(d, m, r) {
 
   #create ID column
   d$id <- seq(1:nrow(d))
@@ -70,6 +72,8 @@ cox_mi <- function(d) {
   dd$event2 <- 1
   dd$t2 <- dd$t1 + cts
   ipd <- dplyr::bind_rows(dd, dc) %>% dplyr::arrange(id) %>% dplyr::select(-id)
+  ipd$nest.id <- m
+  ipd$impute.id <- r
 
   return(ipd)
 }
@@ -81,9 +85,11 @@ cox_mi <- function(d) {
 #' Layer 2 Imputation: Marginal Approach
 #'
 #' @param d A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran
+#' @param m An integer, the nest id for the nested imputation structure
+#' @param r An integer, the impute id for the nested imputation structure
 #'
 #' @returns A data frame with imputed times for event2 where event2 was censored
-marginal_mi <- function(d) {
+nested_marginal_mi <- function(d, m, r) {
 
   #Add an ID column
   d$id <- seq(1, nrow(d))
@@ -128,6 +134,8 @@ marginal_mi <- function(d) {
   dd$event2 <- 1
   dd$t2 <- dd$t1 + cts
   ipd <- dplyr::bind_rows(dd, dc) %>% dplyr::arrange(id) %>% dplyr::select(-id)
+  ipd$nest.id <- m
+  ipd$impute.id <- r
 
   return(ipd)
 }
@@ -143,16 +151,17 @@ marginal_mi <- function(d) {
 #' @param dat a dataframe with one row per subject and columns corresponding to the time and event indicators for each state transition.
 #'  The column names for the time and event indicators should be in the format specified by prefix.states, specifically
 #'  event<i> and t<i> for i = 1, ..., n.states-1
-#' @param M an integer, the number of imputations
+#' @param M an integer, the number of imputation nests (1st layer)
+#' @param R an integer, the number of imputations within each nest (2n layer)
 #' @param n.states an integer, the number of states in the multistate model
 #' @param prefix.states a character vector of length 2, specify the prefix for the event and time columns in the d in that order
 #' @param method a character string, either "marginal" or "cox", indicating which method to use for the second layer of imputation
 #' @param seed an integer, the seed for random number generation
 #' @examples
-#' msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")
-#' @returns A list of length M, where each element is a data frame with imputed times for censored events
+#' msmi.nested.impute(sim.data, M = 5, R=3, n.states = 3, prefix.states = c("event", "t"), method = "marginal")
+#' @returns A nested list with MxR total entries, where each element is a data frame with imputed times for censored events
 #' @export
-msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), method = "marginal", seed = sample(1:.Machine$integer.max, size=1)) {
+msmi.nested.impute <- function(dat, M, R = 1, n.states = 3, prefix.states = c("event", "t"), method = "marginal", seed = sample(1:.Machine$integer.max, size=1)) {
 
   #Check inputs
   if (n.states != 3) {
@@ -164,9 +173,13 @@ msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), m
   if (method != "marginal" & method != "cox") {
     stop("method must be either 'marginal' or 'cox'")
   }
-  if (!(M == floor(M))) {
-    stop("M must be an integer")
+  if (!(M == floor(M)) | !(M > 0)) {
+    stop("M must be a positive integer")
   }
+  if (!(M == floor(M)) | !(R > 0)) {
+    stop("M must be a positive integer.")
+  }
+
 
   #set seed
   set.seed(seed)
@@ -190,7 +203,7 @@ msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), m
                                 event.first = dplyr::case_when(t1 < t2 & event1 == 1 ~ 1,
                                                                !(t1 < t2) & event2 == 1 ~ 2,
                                                                TRUE ~ 0))
-  #multiple imputations for time to first event using mici.impute
+  #create M multiple imputations for time to first event using mici.impute
   d.imp1 <- mici.impute(t.first, event.first, data=d.comp, scheme = "KMI", M = M)
 
   #put data back into the original format for second layer of imputation
@@ -209,16 +222,20 @@ msmi.impute <- function(dat, M, n.states = 3, prefix.states = c("event", "t"), m
     x %>% dplyr::select(t1, event1, t2, event2)
   })
 
-  #second layer of imputation for time to second event
+  #for each imputation in first layer, create R nested imputations for for time to second event
   if (method == "marginal") {
-    d.imp2 <- purrr::map(d.imp1, function(x) {
-      marginal_mi(x)
+    d.imp2 <- purrr::imap(d.imp1, function(d, m) {
+      purrr::map(1:R, function(r) {
+        nested_marginal_mi(d, m, r)
+      })
     })
+  }
 
-
-  } else if (method == "cox") {
-    d.imp2 <- purrr::map(d.imp1, function(x) {
-      cox_mi(x)
+  if (method == "cox") {
+    d.imp2 <- purrr::imap(d.imp1, function(d, m) {
+      purrr::map(1:R, function(r) {
+        nested_marginal_cox(d, m, r)
+      })
     })
   }
 
