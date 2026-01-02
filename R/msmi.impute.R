@@ -14,7 +14,7 @@ cox_mi <- function(d) {
 
   # Create data for transition 1->2 (ill to death)
   u <- d[d$event1 == 1, ]  # All who became ill
-  u$sojourn12 <- u$t2 - u$t1
+  u$sojourn23 <- u$t2 - u$t1
 
   # Identify individuals need imputation for t2
   dc <- d[d$event2 == 1, ]
@@ -43,7 +43,7 @@ cox_mi <- function(d) {
 
   tail.times <- function(tail, times) {
     if (tail > 0) {
-      times <- c(times, max(u$sojourn12) + 1)
+      times <- c(times, max(u$sojourn23) + 1)
     }
     return(times)
   }
@@ -63,7 +63,7 @@ cox_mi <- function(d) {
     } else if(sum(sub) == 1){
       cts[jj] <- surv_times[[jj]][sub]
     } else {
-      cts[jj] <- max(u$sojourn12) + 1 #shadow event time
+      cts[jj] <- max(u$sojourn23) + 1 #shadow event time
     }
   }
   # Update data
@@ -90,7 +90,7 @@ marginal_mi <- function(d) {
 
   # Create data for transition 1->2 (ill to death)
   u <- d[d$event1 == 1, ]  # All who became ill
-  u$sojourn12 <- u$t2 - u$t1
+  u$sojourn23 <- u$t2 - u$t1
 
   # Identify individuals need imputation for t2
   dc <- d[d$event2 == 1, ]
@@ -98,7 +98,7 @@ marginal_mi <- function(d) {
   xt <- dd$t2 - dd$t1
 
   # Fit Kaplan-Meier for transition from ill to death
-  km_summary <- summary(survival::survfit(survival::Surv(sojourn12, event2) ~ 1, data=u,timefix = FALSE))
+  km_summary <- summary(survival::survfit(survival::Surv(sojourn23, event2) ~ 1, data=u,timefix = FALSE))
   surv_probs <- km_summary$surv[length(km_summary$surv)]
   surv_times <- km_summary$time
   prob_diffs <- -diff(c(1, km_summary$surv))
@@ -106,7 +106,7 @@ marginal_mi <- function(d) {
   # Handle tail probability (if survival doesn't reach 0)
   if (surv_probs > 0) {
     prob_diffs <- c(prob_diffs, surv_probs)
-    surv_times <- c(surv_times, max(u$sojourn12) + 1)
+    surv_times <- c(surv_times, max(u$sojourn23) + 1)
   }
 
   # Impute times for censored individuals
@@ -120,7 +120,7 @@ marginal_mi <- function(d) {
     } else if(sum(sub) == 1){
       cts[jj] <- surv_times[sub]
     } else {
-      cts[jj] <- max(u$sojourn12) + 1 #shadow event time
+      cts[jj] <- max(u$sojourn23) + 1 #shadow event time
     }
   }
 
