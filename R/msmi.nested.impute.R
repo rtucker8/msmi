@@ -72,8 +72,8 @@ nested_cox_mi <- function(d, m, r) {
   dd$event2 <- 1
   dd$t2 <- dd$t1 + cts
   ipd <- dplyr::bind_rows(dd, dc) %>% dplyr::arrange(id) %>% dplyr::select(-id)
-  ipd$nest.id <- m
-  ipd$impute.id <- r
+  ipd$M <- m
+  ipd$R<- r
 
   return(ipd)
 }
@@ -134,8 +134,8 @@ nested_marginal_mi <- function(d, m, r) {
   dd$event2 <- 1
   dd$t2 <- dd$t1 + cts
   ipd <- dplyr::bind_rows(dd, dc) %>% dplyr::arrange(id) %>% dplyr::select(-id)
-  ipd$nest.id <- m
-  ipd$impute.id <- r
+  ipd$M <- m
+  ipd$R <- r
 
   return(ipd)
 }
@@ -209,7 +209,6 @@ msmi.nested.impute <- function(dat, M, R = 1, n.states = 3, prefix.states = c("e
 
   #put data back into the original format for second layer of imputation
   d.imp1 <- purrr::map(d.imp1, function(x) {
-
     idx2 <- x$ftype == 2 & x$event.first == 0 #indices for originally censored people who were imputed to have event type 2 first
     idx1 <- x$ftype == 1 & x$event.first == 0 #indices for originally censored people who were imputed to have event type 1 first
 

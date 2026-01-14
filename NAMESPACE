@@ -3,6 +3,8 @@
 export("%>%")
 export(msmi.impute)
 export(msmi.nested.impute)
+export(msmi.tprobs)
+export(plot_region)
 import(dplyr)
 import(survival)
 importFrom(magrittr,"%>%")

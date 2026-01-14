@@ -16,7 +16,12 @@ Imports:
     dplyr,
     magrittr,
     purrr,
-    survival
+    survival,
+    MASS,
+    emulator,
+    ggplot2,
+    ggtern,
+    stats
 Depends: 
     R (>= 3.5)
 LazyData: true
