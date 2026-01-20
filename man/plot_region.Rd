@@ -4,12 +4,14 @@
 \alias{plot_region}
 \title{Plot Confidence Regions State Occupation Probabilities}
 \usage{
-plot_region(p_draws, p_hat = NULL)
+plot_region(p_draws, p_hat = NULL, time = NULL)
 }
 \arguments{
 \item{p_draws}{A matrix of points in the confidence region (each row is a point, each column is a state)}
 
 \item{p_hat}{(Optional) A data frame with one row and three columns (p1, p2, p3) representing the point estimate to overlay on the plot}
+
+\item{time}{(Optional) The time point corresponding to the state occupation probabilities, used for plot title}
 }
 \value{
 A ggtern plot object showing the confidence region and optional point estimate
@@ -20,7 +22,7 @@ Plot Confidence Regions State Occupation Probabilities
 \examples{
 imps <- msmi.impute(dat = sim.data, M = 5, n.states = 3,
                     prefix.states = c("event", "t"), method = "marginal")
-tprobs <- msmi.tprobs(imp_obj = imps, times = c(1,2))
+tprobs <- msmi.tprobs(imp_obj = imps, times = c(1,3))
 #Plot the confidence region for state occupation probabilities at time = 1
-plot_region( p_draws = tprobs$cr_list[[1]], p_hat   = tprobs$mi_estimate[1, c("p1", "p2", "p3")])
+plot_region( p_draws = tprobs$cr_list[['3']], p_hat   = tprobs$mi_estimate['3', c("p1", "p2", "p3")], time = 3)
 }

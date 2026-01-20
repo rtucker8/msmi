@@ -41,7 +41,7 @@ get_empirical_probs <- function(df, times) {
 #'
 #' @param imp_obj Output from msmi.impute()
 #' @param times Vector of times at which to calculate state occupation probabilities
-#' @param int.type Type of confidence region to compute: "multinomial_logistic"
+#' @param int.type Type of confidence region to compute: "multinomial_logistic" or "dirichlet" (default is "multinomial_logistic")
 #' @param alpha Significance level for the confidence region (default is 0.95)
 #'
 #' @returns A list with the following components:
@@ -50,7 +50,8 @@ get_empirical_probs <- function(df, times) {
 #' \item{int.type}{The type of confidence interval used}
 #' \item{alpha}{The significance level for the confidence region}
 #' \item{vcov}{A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
-#' \item{cr_list}{A list of confidence regions (defined via point clouds) for the state occupation probabilities at each time in the probability space}
+#' \item{cr_list}{A list of confidence regions (defined via point clouds) for the state occupation probabilities at each time in the probability space.
+#'.               Each element is a list with two elements: 'inside' and 'outside', each a matrix of points inside and outside the confidence region respectively.}}
 #'
 #' @export
 #'
@@ -71,23 +72,13 @@ msmi.tprobs <- function(imp_obj = NULL,
   #Rubin's Rules Point Estimate: Average empirical probabilities across imputations for each simulated dataset
   mi_estimate <- dplyr::bind_rows(empirical_probs, .id = "imputation") %>%
       dplyr::group_by(time) %>%
-      dplyr::summarise(dplyr::across(dplyr::starts_with("p"), \(x) mean(x, na.rm = TRUE)), .groups = "drop")
+      dplyr::summarise(dplyr::across(dplyr::starts_with("p"), \(x) mean(x, na.rm = TRUE)), .groups = "drop") %>%
+    as.data.frame()
+
+  rownames(mi_estimate) <- mi_estimate$time
 
   #Calculate Confidence Intervals
 
-  #constants for Rubin's Rules
-  n <- nrow(imp_obj[[1]]) #sample size
-  M <- length(imp_obj) #number of imputations
-  k <- 3  #number of states, fixed at 3 for now
-
-  #create Mxk matrix of estimates for each time point
-  ps <- dplyr::bind_rows(empirical_probs) %>%
-    dplyr::group_by(time) %>%
-    dplyr::group_split()
-
-  p_list <- purrr::map(ps, function(x) {
-    as.matrix(x[ , names(x) != "time"])
-  })
 
   #transform probability simplex to unconstrained space with dimension k-1 at each time point
   #TO NOTE: transformation is undefined on the boundary of p, i.e. p=0 or p=1, so we add epsilon at the boundary to make it numerically stable
@@ -95,10 +86,24 @@ msmi.tprobs <- function(imp_obj = NULL,
   if (int.type == "dirichlet") {
 
   } else if (int.type == "multinomial_logistic") {
+
+    #constants for Rubin's Rules
+    n <- nrow(imp_obj[[1]]) #sample size
+    M <- length(imp_obj) #number of imputations
+    k <- 3  #number of states, fixed at 3 for now
+
+    #create Mxk matrix of estimates for each time point
+    ps <- dplyr::bind_rows(empirical_probs) %>%
+      dplyr::group_by(time) %>%
+      dplyr::group_split()
+
+    p_list <- purrr::map(ps, function(x) {
+      as.matrix(x[ , names(x) != "time"])
+    })
+
     x_list <- purrr::map(p_list, function(p) {
       t(apply(p, 1, multinomial_logit))
     })
-    }
 
   #calculate mean estimate on unconstrained scale at each time point
   x_est <- purrr::map(x_list, function(x) {
@@ -142,12 +147,6 @@ msmi.tprobs <- function(imp_obj = NULL,
   #function to get a point cloud that lies within the Wald region
   wald_region <- function(theta_hat, Sigma, n_draw = 5000) {
 
-    #TO DO: implement my own mvrnorm to avoid MASS dependency
-    #NOTE: Error in `purrr::map2()` at msmi/R/msmi.tprobs.R:155:3:
-    # ℹ In index: 9.
-    # Caused by error in `eigen()`:
-    #   ! infinite or missing values in 'x'
-    # Run `rlang::last_trace()` to see where the error occurred.
     draws <- MASS::mvrnorm(n_draw, mu = theta_hat, Sigma = Sigma)
 
     quad <- apply(draws, 1, function(z) {
@@ -155,14 +154,27 @@ msmi.tprobs <- function(imp_obj = NULL,
       emulator::quad.form.inv(Sigma, d)
     })
 
-    draws[quad <= crit, , drop = FALSE]
+    list(
+      inside  = draws[quad <= crit, , drop = FALSE],
+      outside = draws[quad >  crit, , drop = FALSE]
+    )
   }
 
   cr_list <- purrr::map2(x_est, total_var_list, function(theta_hat, Sigma) {
     theta_draws <- wald_region(theta_hat, Sigma)
-    t(apply(theta_draws, 1, multinomial_logit_inverse))
+
+    list(
+      inside = t(apply(theta_draws$inside,  1, multinomial_logit_inverse)),
+      outside = t(apply(theta_draws$outside, 1, multinomial_logit_inverse))
+    )
   })
 
+  names(cr_list) <- times
+  names(total_var_list) <- times
+
+  } else {
+    stop("int.type must be one of 'multinomial_logistic' or 'dirichlet'")
+  }
 
   return(list("mi_estimate" = mi_estimate, int.type = int.type, alpha = alpha, vcov = total_var_list, cr_list = cr_list))
 }

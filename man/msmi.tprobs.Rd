@@ -16,7 +16,7 @@ msmi.tprobs(
 
 \item{times}{Vector of times at which to calculate state occupation probabilities}
 
-\item{int.type}{Type of confidence region to compute: "multinomial_logistic"}
+\item{int.type}{Type of confidence region to compute: "multinomial_logistic" or "dirichlet" (default is "multinomial_logistic")}
 
 \item{alpha}{Significance level for the confidence region (default is 0.95)}
 }
