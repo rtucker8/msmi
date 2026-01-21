@@ -45,7 +45,7 @@ get_empirical_probs <- function(df, times) {
 #' @param alpha Significance level for the confidence region (default is 0.95)
 #'
 #' @returns A list with the following components:
-#'  \item{mi_estimate}{A data frame with the multiple imputation point estimates and confidence intervals
+#'  \item{mi_estimate}{A data frame with the multiple imputation point estimates
 #' of state occupation probabilities at each time}
 #' \item{int.type}{The type of confidence interval used}
 #' \item{alpha}{The significance level for the confidence region}
@@ -142,7 +142,7 @@ msmi.tprobs <- function(imp_obj = NULL,
 
   #compute joint confidence regions at each time point
   conf.width <- 1 - alpha
-  crit <- stats::qchisq(conf.width, df = k - 1)
+  crit <- stats::qchisq(conf.width, df = k - 1, lower.tail = FALSE)
 
   #function to get a point cloud that lies within the Wald region
   wald_region <- function(theta_hat, Sigma, n_draw = 5000) {
