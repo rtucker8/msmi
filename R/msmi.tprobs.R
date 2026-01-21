@@ -43,15 +43,16 @@ get_empirical_probs <- function(df, times) {
 #' @param times Vector of times at which to calculate state occupation probabilities
 #' @param int.type Type of confidence region to compute: "multinomial_logistic" or "dirichlet" (default is "multinomial_logistic")
 #' @param alpha Significance level for the confidence region (default is 0.95)
+#' @param vcov Logical indicating whether to return the variance-covariance matrices for the state occupation probabilities at each time (default is FALSE)
 #'
 #' @returns A list with the following components:
 #'  \item{mi_estimate}{A data frame with the multiple imputation point estimates
 #' of state occupation probabilities at each time}
 #' \item{int.type}{The type of confidence interval used}
 #' \item{alpha}{The significance level for the confidence region}
-#' \item{vcov}{A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
-#' \item{cr_list}{A list of confidence regions (defined via point clouds) for the state occupation probabilities at each time in the probability space.
-#'.               Each element is a list with two elements: 'inside' and 'outside', each a matrix of points inside and outside the confidence region respectively.}}
+#' \item{vcov}{if vcov = TRUE, A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
+#' \item{cr_list}{A list of confidence regions (defined via point clouds) for the state occupation probabilities at each time
+#'  in the (1) unconstrained 2D space and (2) the probability space.}
 #'
 #' @export
 #'
@@ -62,7 +63,8 @@ get_empirical_probs <- function(df, times) {
 msmi.tprobs <- function(imp_obj = NULL,
                         times = NULL,
                         int.type = "multinomial_logistic",
-                        alpha = 0.95) {
+                        alpha = 0.95,
+                        vcov = FALSE) {
 
   #For each imputed dataset, calculate the state occupation probabilities at each time of interest
   empirical_probs <- purrr::map(imp_obj, function(df) {
@@ -109,6 +111,15 @@ msmi.tprobs <- function(imp_obj = NULL,
   x_est <- purrr::map(x_list, function(x) {
     colMeans(x)
   })
+  names(x_est) <- times
+
+  #put unconstrained estimates into a dataframe
+  unconstrained_estimate <- data.frame(
+    time = as.numeric(names(x_est)),
+    do.call(rbind, x_est)
+  )
+  names(unconstrained_estimate)[2:3] <- c("theta1", "theta2")
+  rownames(unconstrained_estimate) <- unconstrained_estimate$time
 
   #between variance: 1/(M-1)*sum[(x-x_est)'(x-x_est)] {Note: inner product because x_est is a row vector in R}
   dif_list <- purrr::map2(x_list, x_est, function(x, est) {
@@ -154,19 +165,12 @@ msmi.tprobs <- function(imp_obj = NULL,
       emulator::quad.form.inv(Sigma, d)
     })
 
-    list(
-      inside  = draws[quad <= crit, , drop = FALSE],
-      outside = draws[quad >  crit, , drop = FALSE]
-    )
+    return(draws[quad <= crit, , drop = FALSE])
   }
 
   cr_list <- purrr::map2(x_est, total_var_list, function(theta_hat, Sigma) {
     theta_draws <- wald_region(theta_hat, Sigma)
-
-    list(
-      inside = t(apply(theta_draws$inside,  1, multinomial_logit_inverse)),
-      outside = t(apply(theta_draws$outside, 1, multinomial_logit_inverse))
-    )
+    return(list(unconstrained = theta_draws, p.space = t(apply(theta_draws,  1, multinomial_logit_inverse))))
   })
 
   names(cr_list) <- times
@@ -176,5 +180,10 @@ msmi.tprobs <- function(imp_obj = NULL,
     stop("int.type must be one of 'multinomial_logistic' or 'dirichlet'")
   }
 
-  return(list("mi_estimate" = mi_estimate, int.type = int.type, alpha = alpha, vcov = total_var_list, cr_list = cr_list))
+  if (vcov == FALSE) {
+    return(list(mi_estimate = mi_estimate, unconstrained_estimate = unconstrained_estimate, int.type = int.type, alpha = alpha, cr_list = cr_list))
+  } else if (vcov == TRUE) {
+    return(list(mi_estimate = mi_estimate, unconstrained_estimate = unconstrained_estimate, int.type = int.type, alpha = alpha, vcov = total_var_list, cr_list = cr_list))
+  }
+
 }

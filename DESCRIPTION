@@ -21,7 +21,8 @@ Imports:
     emulator,
     ggplot2,
     ggtern,
-    stats
+    stats,
+    grDevices
 Depends: 
     R (>= 3.5)
 LazyData: true

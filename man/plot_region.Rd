@@ -4,17 +4,18 @@
 \alias{plot_region}
 \title{Plot Confidence Regions State Occupation Probabilities}
 \usage{
-plot_region(p_draws, p_hat = NULL, time = NULL)
+plot_region(tprob_obj, time, unconstrained = FALSE)
 }
 \arguments{
-\item{p_draws}{A matrix of points in the confidence region (each row is a point, each column is a state)}
+\item{tprob_obj}{The list returned by msmi::tprobs()}
 
-\item{p_hat}{(Optional) A data frame with one row and three columns (p1, p2, p3) representing the point estimate to overlay on the plot}
+\item{time}{The time point of interest at which to generate the plot}
 
-\item{time}{(Optional) The time point corresponding to the state occupation probabilities, used for plot title}
+\item{unconstrained}{Logical indicating whether to provide an additional plot in the unconstrained 2D space. Default is FALSE.}
 }
 \value{
-A ggtern plot object showing the confidence region and optional point estimate
+If unconstrained == FALSE, A plot showing the confidence region and point estimate in the probability simplex.
+If unconstrained == TRUE, A list of plots showing the confidence region and point estimate in the (1) unconstrained 2D space and the (2) probability simplex.
 }
 \description{
 Plot Confidence Regions State Occupation Probabilities
@@ -24,5 +25,5 @@ imps <- msmi.impute(dat = sim.data, M = 5, n.states = 3,
                     prefix.states = c("event", "t"), method = "marginal")
 tprobs <- msmi.tprobs(imp_obj = imps, times = c(1,3))
 #Plot the confidence region for state occupation probabilities at time = 1
-plot_region( p_draws = tprobs$cr_list[['3']], p_hat   = tprobs$mi_estimate['3', c("p1", "p2", "p3")], time = 3)
+plot_region(tprob_obj = tprobs, time = 1)
 }
