@@ -17,7 +17,7 @@ Imports:
     magrittr,
     purrr,
     survival,
-    MASS,
+    mixtools,
     emulator,
     ggplot2,
     ggtern,

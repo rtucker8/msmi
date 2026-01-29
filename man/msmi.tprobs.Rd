@@ -7,8 +7,9 @@
 msmi.tprobs(
   imp_obj = NULL,
   times = NULL,
-  int.type = "multinomial_logistic",
-  alpha = 0.95,
+  int.type = "trWald",
+  prior = NULL,
+  alpha = 0.05,
   vcov = FALSE
 )
 }
@@ -17,9 +18,11 @@ msmi.tprobs(
 
 \item{times}{Vector of times at which to calculate state occupation probabilities}
 
-\item{int.type}{Type of confidence region to compute: "multinomial_logistic" or "dirichlet" (default is "multinomial_logistic")}
+\item{int.type}{Type of confidence region to compute: "trWald" or "bayes" (default is "trWald")}
 
-\item{alpha}{Significance level for the confidence region (default is 0.95)}
+\item{prior}{List of prior parameters for the diriclet distrubtion when int.type = "bayes" (default = NULL)}
+
+\item{alpha}{Significance level for the confidence region (default is 0.05)}
 
 \item{vcov}{Logical indicating whether to return the variance-covariance matrices for the state occupation probabilities at each time (default is FALSE)}
 }
@@ -27,11 +30,12 @@ msmi.tprobs(
 A list with the following components:
 \item{mi_estimate}{A data frame with the multiple imputation point estimates
 of state occupation probabilities at each time}
+\item{unconstrained_estimate}{(if int.type = "trWald") A data frame with the multiple imputation point estimates}
 \item{int.type}{The type of confidence interval used}
 \item{alpha}{The significance level for the confidence region}
-\item{vcov}{if vcov = TRUE, A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
-\item{cr_list}{A list of confidence regions (defined via point clouds) for the state occupation probabilities at each time
-in the (1) unconstrained 2D space and (2) the probability space.}
+\item{vcov}{(if vcov = TRUE and int.type = "trWald") A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
+\item{cr_list}{A list of confidence regions (defined via convex hulls) for the state occupation probabilities at each time
+in the (1) (if int.type = "trWald") unconstrained 2D space and (2) the probability space.}
 }
 \description{
 Calculate Empirical Transition Matrix from Multiple Imputed Datasets for an Illness-Death Model

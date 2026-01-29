@@ -41,18 +41,20 @@ get_empirical_probs <- function(df, times) {
 #'
 #' @param imp_obj Output from msmi.impute()
 #' @param times Vector of times at which to calculate state occupation probabilities
-#' @param int.type Type of confidence region to compute: "multinomial_logistic" or "dirichlet" (default is "multinomial_logistic")
-#' @param alpha Significance level for the confidence region (default is 0.95)
+#' @param int.type Type of confidence region to compute: "trWald" or "bayes" (default is "trWald")
+#' @param prior List of prior parameters for the diriclet distrubtion when int.type = "bayes" (default = NULL)
+#' @param alpha Significance level for the confidence region (default is 0.05)
 #' @param vcov Logical indicating whether to return the variance-covariance matrices for the state occupation probabilities at each time (default is FALSE)
 #'
 #' @returns A list with the following components:
 #'  \item{mi_estimate}{A data frame with the multiple imputation point estimates
 #' of state occupation probabilities at each time}
+#' \item{unconstrained_estimate}{(if int.type = "trWald") A data frame with the multiple imputation point estimates}
 #' \item{int.type}{The type of confidence interval used}
 #' \item{alpha}{The significance level for the confidence region}
-#' \item{vcov}{if vcov = TRUE, A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
-#' \item{cr_list}{A list of confidence regions (defined via point clouds) for the state occupation probabilities at each time
-#'  in the (1) unconstrained 2D space and (2) the probability space.}
+#' \item{vcov}{(if vcov = TRUE and int.type = "trWald") A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
+#' \item{cr_list}{A list of confidence regions (defined via convex hulls) for the state occupation probabilities at each time
+#'  in the (1) (if int.type = "trWald") unconstrained 2D space and (2) the probability space.}
 #'
 #' @export
 #'
@@ -62,8 +64,9 @@ get_empirical_probs <- function(df, times) {
 #' msmi.tprobs(imp_obj = imps, times = seq(1, 5, 1))
 msmi.tprobs <- function(imp_obj = NULL,
                         times = NULL,
-                        int.type = "multinomial_logistic",
-                        alpha = 0.95,
+                        int.type = "trWald",
+                        prior = NULL,
+                        alpha = 0.05,
                         vcov = FALSE) {
 
   #For each imputed dataset, calculate the state occupation probabilities at each time of interest
@@ -81,13 +84,71 @@ msmi.tprobs <- function(imp_obj = NULL,
 
   #Calculate Confidence Intervals
 
-
-  #transform probability simplex to unconstrained space with dimension k-1 at each time point
-  #TO NOTE: transformation is undefined on the boundary of p, i.e. p=0 or p=1, so we add epsilon at the boundary to make it numerically stable
   #TO NOTE: var(theta1) = INF at latter timepoints when p1 = 0 which causes problems; consequence of WALD interval
-  if (int.type == "dirichlet") {
 
-  } else if (int.type == "multinomial_logistic") {
+  if (int.type == "bayes") { #interpretation, adding alpha_i successes in each category at timepoint of interest
+
+    if (is.null(prior)) { stop("When int.type = 'bayes', prior must be specified.") }
+
+    #calculate posterior parameters for Dirichlet distribution at each time point and for each imputation
+    counts <- dplyr::bind_rows(empirical_probs, .id = "imp") %>%
+      dplyr::mutate(dplyr::across(dplyr::starts_with("p"), ~ .x * nrow(imp_obj[[1]])))
+    posterior <- counts %>%
+      dplyr::mutate(
+        a1 = p1 + prior[1],
+        a2 = p2 + prior[2],
+        a3 = p3 + prior[3]
+      ) %>%
+      dplyr::select(imp, time, a1, a2, a3) %>%
+      dplyr::group_by(time) %>%
+      dplyr::group_split()
+
+    n_draws   <- 1000
+
+
+    cr_list <- purrr::map(posterior, function(df) {
+
+      # number of imputations
+      M <- nrow(df)
+
+      # store alpha vectors as a list
+      alpha_list <- lapply(seq_len(M), function(i) {
+        as.numeric(df[i, c("a1", "a2", "a3")])
+      })
+
+      #draw from each posterior and pool
+      p_mix <- purrr::map_dfr(alpha_list, function(a) {
+        draws <- gtools::rdirichlet(n_draws, a) %>% as.data.frame() #x
+        density <- gtools::ddirichlet(draws, a)                      #f(x)
+        return(draws %>% dplyr::mutate(density = density/M)) #normalized density
+      })
+
+      # #mixture log-density at each draw
+      # log_mix_density <- apply(p_mix, 1, function(p) {
+      #   log(mean(vapply(alpha_list, function(a) {
+      #     gtools::ddirichlet(p, a)
+      #   }, numeric(1))))
+      # })
+
+      #HPD cutoff
+      cutoff <- stats::quantile(p_mix$density, probs = alpha)
+
+      #return convex hull for HPD region for this time (could not be ideal since HPD region not necessarily contiguous)
+      pts <- p_mix[p_mix$density >= cutoff, , drop = FALSE]
+      pts <- pts[, colnames(pts) != "density"]
+
+      chull <- grDevices::chull(pts)
+
+      p_hull <- pts[chull, ]
+
+
+      return(list(p.space = pts[chull, ]))
+    })
+    names(cr_list) <- times
+
+    return(list(mi_estimate = mi_estimate, int.type = int.type, alpha = alpha, cr_list = cr_list))
+
+  } else if (int.type == "trWald") {
 
     #constants for Rubin's Rules
     n <- nrow(imp_obj[[1]]) #sample size
@@ -151,39 +212,29 @@ msmi.tprobs <- function(imp_obj = NULL,
     w + (1 + 1/M)*b
   })
 
-  #compute joint confidence regions at each time point
-  conf.width <- 1 - alpha
-  crit <- stats::qchisq(conf.width, df = k - 1, lower.tail = FALSE)
-
-  #function to get a point cloud that lies within the Wald region
-  wald_region <- function(theta_hat, Sigma, n_draw = 5000) {
-
-    draws <- MASS::mvrnorm(n_draw, mu = theta_hat, Sigma = Sigma)
-
-    quad <- apply(draws, 1, function(z) {
-      d <- z - theta_hat
-      emulator::quad.form.inv(Sigma, d)
-    })
-
-    return(draws[quad <= crit, , drop = FALSE])
-  }
-
   cr_list <- purrr::map2(x_est, total_var_list, function(theta_hat, Sigma) {
-    theta_draws <- wald_region(theta_hat, Sigma)
-    return(list(unconstrained = theta_draws, p.space = t(apply(theta_draws,  1, multinomial_logit_inverse))))
+
+    thetas <- mixtools::ellipse(mu = theta_hat, sigma = Sigma, alpha = alpha, npoints = 500, draw=FALSE)
+    ps <- t(apply(thetas,  1, multinomial_logit_inverse))
+
+    return(list(unconstrained = thetas, p.space = ps))
   })
+
 
   names(cr_list) <- times
   names(total_var_list) <- times
-
-  } else {
-    stop("int.type must be one of 'multinomial_logistic' or 'dirichlet'")
-  }
 
   if (vcov == FALSE) {
     return(list(mi_estimate = mi_estimate, unconstrained_estimate = unconstrained_estimate, int.type = int.type, alpha = alpha, cr_list = cr_list))
   } else if (vcov == TRUE) {
     return(list(mi_estimate = mi_estimate, unconstrained_estimate = unconstrained_estimate, int.type = int.type, alpha = alpha, vcov = total_var_list, cr_list = cr_list))
   }
+
+
+  } else {
+    stop("int.type must be one of 'trWald' or 'bayes'")
+  }
+
+
 
 }
