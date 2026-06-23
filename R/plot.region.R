@@ -1,6 +1,6 @@
 #' Plot Confidence Regions State Occupation Probabilities
 #'
-#' @param tprob_obj The list returned by msmi::tprobs()
+#' @param tprob_obj The list returned by msmi.tprobs()
 #' @param time  The time point of interest at which to generate the plot
 #' @param unconstrained Logical indicating whether to provide an additional plot in the unconstrained 2D space. Default is FALSE.
 #'
@@ -9,7 +9,7 @@
 #' @export
 #'
 #' @examples
-#' imps <- msmi.impute(dat = sim.data, M = 5, n.states = 3,
+#' imps <- msmi.impute(dat = sim.data, M = 5,
 #'                     prefix.states = c("event", "t"), method = "marginal")
 #' tprobs <- msmi.tprobs(imp_obj = imps, times = c(1,3))
 #' #Plot the confidence region for state occupation probabilities at time = 1
@@ -24,6 +24,11 @@ plot_region <- function(tprob_obj, time, unconstrained = FALSE) {
 
     #Convex hull for confidence ellipse
     r_hull <- tprob_obj$cr_list[[as.character(time)]][["unconstrained"]]
+
+    if (is.null(r_hull)) {
+      stop("No confidence region available for this time point. Wald regions have collapsed uncertainty at the boundary.")
+    }
+
     r_hull <- as.data.frame(r_hull)
     colnames(r_hull) <- c("theta1", "theta2")
 
@@ -50,6 +55,11 @@ plot_region <- function(tprob_obj, time, unconstrained = FALSE) {
 
   #Convex Hull for confidence region
   p_hull <- tprob_obj$cr_list[[as.character(time)]][["p.space"]]
+
+  if (is.null(p_hull)) {
+    stop("No confidence region available for this time point. Wald regions have collapsed uncertainty at the boundary.")
+  }
+
   p_hull <- as.data.frame(p_hull)
   colnames(p_hull) <- c("p1", "p2", "p3")
 

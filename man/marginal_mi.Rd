@@ -4,10 +4,14 @@
 \alias{marginal_mi}
 \title{Layer 2 Imputation: Marginal Approach}
 \usage{
-marginal_mi(d)
+marginal_mi(d, type = "dp", concentration = 1)
 }
 \arguments{
 \item{d}{A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran}
+
+\item{type}{a character string, either "dp" or "km", indicating whether to use the Dirichlet process approach in imputation.}
+
+\item{concentration}{a positive numeric, the concentration parameter for the Dirichlet process. Only used if type = "dp"}
 }
 \value{
 A data frame with imputed times for event2 where event2 was censored

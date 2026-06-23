@@ -4,7 +4,14 @@
 \alias{mici.impute}
 \title{Function to generate multiple imputations from the mici package by Elizabeth Chase}
 \usage{
-mici.impute(ftime = NULL, ftype = NULL, data = NULL, M = 200, scheme = "KMI")
+mici.impute(
+  ftime = NULL,
+  ftype = NULL,
+  data = NULL,
+  M = 200,
+  type = c("km", "dp"),
+  concentration = 1
+)
 }
 \arguments{
 \item{ftime}{Either the name of the variable in the data that contains the event
@@ -20,8 +27,12 @@ numeric vectors), this is the dataframe in which those variables are stored.}
 
 \item{M}{The number of imputations desired; the default is 200.}
 
-\item{scheme}{The imputation approach to be used. Options are "RSI" for risk
-set imputation and "KMI" for Kaplan-Meier imputation. KMI is the default.}
+\item{type}{The imputation method to use. The default is "km", which generates draws from the Kaplan-Meier distribution.
+The alternative is "dp", for Dirichlet process, which imputes survival times from the posterior predictive distribution
+under a Dirichlet process prior.}
+
+\item{concentration}{The concentration parameter to use for the Dirichlet process imputation method.
+The default 1 is  which corresponds to a weak prior.}
 }
 \value{
 The function returns a length M list, where each object of the list

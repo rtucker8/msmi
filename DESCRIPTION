@@ -17,12 +17,13 @@ Imports:
     magrittr,
     purrr,
     survival,
+    flexsurv,
     mixtools,
-    emulator,
     ggplot2,
     ggtern,
     stats,
-    grDevices
+    grDevices,
+    gtools
 Depends: 
     R (>= 3.5)
 LazyData: true

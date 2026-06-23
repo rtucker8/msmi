@@ -20,8 +20,11 @@
 #' @param data Optional: if the ftime and ftype inputs are variable names (rather than
 #' numeric vectors), this is the dataframe in which those variables are stored.
 #' @param M The number of imputations desired; the default is 200.
-#' @param scheme The imputation approach to be used. Options are "RSI" for risk
-#' set imputation and "KMI" for Kaplan-Meier imputation. KMI is the default.
+#' @param type The imputation method to use. The default is "km", which generates draws from the Kaplan-Meier distribution.
+#' The alternative is "dp", for Dirichlet process, which imputes survival times from the posterior predictive distribution
+#' under a Dirichlet process prior.
+#' @param concentration The concentration parameter to use for the Dirichlet process imputation method.
+#' The default is 1, which corresponds to a weak prior.
 #'
 #' @return The function returns a length M list, where each object of the list
 #' is a dataframe with columns ftime, ftype containing the imputed event times and
@@ -31,18 +34,16 @@
 #' M dataframes store the original inputs (without imputation).
 #' @import dplyr
 #' @import survival
+#' @import flexsurv
 mici.impute <- function(ftime = NULL,
                         ftype = NULL,
                         data = NULL,
                         M = 200,
-                        scheme = "KMI"){
+                        type = c("km", "dp"),
+                        concentration = 1){
   if (!is.null(data)){
-    ftime_name <- substitute(ftime)
-    if(is.symbol(ftime_name)) ftime_name <- deparse(ftime_name)
-    ftime <- data[[ftime_name]]
-    ftype_name <- substitute(ftype)
-    if(is.symbol(ftype_name)) ftype_name <- deparse(ftype_name)
-    ftype <- data[[ftype_name]]
+    ftime <- data[[ftime]]
+    ftype <- data[[ftype]]
 
     if (!is.vector(ftime)){stop("ftime must contain numeric event times.")}
     if (!is.vector(ftype)){stop("ftype must contain numeric event types.")}
@@ -95,22 +96,49 @@ mici.impute <- function(ftime = NULL,
   n <- nrow(u)
   myimps <- list()
 
-  if (scheme=="KMI"){
-    g <- summary(survfit(Surv(ftime, ftype != 0) ~ 1, data = u, timefix = FALSE))
-    gm <- g$surv[length(g$surv)]
-    w <- g$time
-    wp <- -diff(c(1, g$surv))
+  #KM Fit
+  g <- summary(survfit(Surv(ftime, ftype != 0) ~ 1, data = u, timefix = FALSE))
+  gm <- g$surv[length(g$surv)]
+  w <- g$time
+  wp <- -diff(c(1, g$surv))
 
-    if (gm > 0) {
-      wp <- c(wp, gm)
-      w <- c(w, max(u$ftime) + 1)
-    }
+  if (gm > 0) {
+    wp <- c(wp, gm)
+    w <- c(w, max(u$ftime) + 1)
+  }
 
-    for (j in 1:M) {
-      cts <- NULL
-      cevent <- NULL
-      for (jj in 1:length(xt)) {
-        sub = w > xt[jj]
+  if (type == "dp") {
+    #Weibull Fit
+    fit_weibull <- flexsurv::flexsurvreg(survival::Surv(ftime, ftype != 0) ~ 1, data = u, dist = "weibull")
+    shape <- fit_weibull$res["shape", "est"]
+    scale <- fit_weibull$res["scale", "est"]
+    G.a <- summary(fit_weibull, type = "survival", t = xt )[[1]][['est']] #P(T>t | T>a) under the Weibull Fit, where a is xt
+  }
+
+  for (j in 1:M) {
+    cts <- NULL
+    cevent <- NULL
+    for (jj in 1:length(xt)) {
+
+      sub = w > xt[jj]
+
+      #Decide to draw from Shadow Weibull or KM sticks
+      if (type == "dp") {
+        #Naive: p_weibull = 1/(length(w[sub]) + 1)
+        n.a = length(w[sub]) # number of sticks in the KM distribution that are greater than xt[jj]
+        p_weibull = concentration*G.a[[jj]]/(concentration*G.a[[jj]] + n.a) #weight to put on the base distribution (Weibull) according to DPP
+        use_weibull = stats::rbinom(1, 1, prob = p_weibull)
+      } else {
+        use_weibull = 0
+     }
+
+      #Impute event times and types
+      if (use_weibull == 1) {
+        u <- stats::runif(1)
+        cts[jj] <- (-(scale^shape)*log(u) + xt[jj]^shape)^(1/shape)
+        cevent[jj] <- resample(c(1,2), size = 1)
+      } else {
+
         if (gm > 0) {
           if (length(w[sub]) == 1) {
             cts[jj] <- w[sub]
@@ -138,43 +166,15 @@ mici.impute <- function(ftime = NULL,
         }
       }
 
-      dd$ftime = cts
-      dd$ftype = cevent
-      ipd = bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
-
-      myimps <- append(myimps, list(ipd))
     }
-  } else if (scheme=="RSI"){
-    xt <- sort(unique(dd$ftime))
-    for (j in 1:M) {
-      ipd <- u
-      for (jj in 1:length(xt)) {
-        sub = ipd$ftime > xt[jj]
-        if (length(which(sub)) > 1){
-          inds <- resample(which(sub), size = length(which(near(ipd$ftime, xt[jj]) &
-                                                             ipd$ftype==0)), replace = TRUE)
-          ipd[near(ipd$ftime, xt[jj]) & ipd$ftype==0,c("ftime", "ftype")] <- ipd[inds,c("ftime", "ftype")]
-        }
-      }
-      if (length(which(ipd$ftype==0))>0){
-        last_cens <- max(ipd$ftime[ipd$ftype==0])
-      } else{
-        last_cens <- NULL
-      }
 
-      if (length(last_cens)>0){
-        if (last_cens <= last_event){
-          ipd$ftype[ipd$ftype==0] <- resample(u$ftype[u$ftime==last_event & u$ftype!=0],
-                                              size = length(which(ipd$ftype==0)), replace = TRUE)
-        } else{
-          ipd$ftype[ipd$ftype==0] <- NA
-        }
-      }
+    dd$ftime = cts
+    dd$ftype = cevent
+    ipd = bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
 
-      ipd <- ipd %>% arrange(id) %>% select(-id)
-      myimps <- append(myimps, list(ipd))
-    }
+    myimps <- append(myimps, list(ipd))
   }
 
   return(myimps)
 }
+
