@@ -31,75 +31,54 @@ get_empirical_probs <- function(df, times) {
   bind_rows(results)
 }
 
-#' Calculate Multinomial Distribution Log-Likelihood
+#' #' Calculate Multinomial Distribution Log-Likelihood
+#' #'
+#' #' @param p a k-dimensional vector characterizing the cell probabilities for a multinomial distribution
+#' #' @param counts a k-dimensional vector giving the observed counts for each category arising from a multinomial distribution
+#' #'
+#' #' @returns the multinomial log-likelihood, scalar
+#' multinom_loglik <- function(p, counts) {
 #'
-#' @param p a k-dimensional vector characterizing the cell probabilities for a multinomial distribution
-#' @param counts a k-dimensional vector giving the observed counts for each category arising from a multinomial distribution
+#'   if(any(p < 0))
+#'     return(-Inf)
 #'
-#' @returns the multinomial log-likelihood, scalar
-multinom_loglik <- function(p, counts) {
-
-  if(any(p < 0))
-    return(-Inf)
-
-  if(abs(sum(p) - 1) > 1e-10)
-    return(-Inf)
-
-  # impossible point
-  if(any(counts > 0 & p == 0))
-    return(-Inf)
-
-  idx <- counts > 0
-
-  sum(counts[idx] * log(p[idx]))
-}
-
-#' Calculate Multinomial Deviance
+#'   if(abs(sum(p) - 1) > 1e-10)
+#'     return(-Inf)
 #'
-#' @param p a k-dimensional vector characterizing the cell probabilities for a multinomial distribution
-#' @param counts a k-dimensional vector giving the observed counts for each category arising from a multinomial distribution
+#'   # impossible point
+#'   if(any(counts > 0 & p == 0))
+#'     return(-Inf)
 #'
-#' @returns the multinomial deviance for a candidate probability vector compared to the MLE, scalar
-multinom_deviance <- function(p, counts) {
-
-  phat <- counts / sum(counts)
-
-  2 * (multinom_loglik(phat, counts) - multinom_loglik(p, counts))
-}
-
-simplex_grid <- function(n) {
-  g <- expand.grid(i = 0:n, j = 0:n)
-  g <- subset(g, i + j <= n)
-
-  transform(
-    g,
-    x1 = i / n,
-    x2 = j / n,
-    x3 = (n - i - j) / n
-  )[c("x1", "x2", "x3")]
-}
-
-
-#' Calculate Meng-Rubin LRT Statistic
+#'   idx <- counts > 0
 #'
-#' @param L_counts a list of k-dimensional vectors given the observed counts for each state under each imputation at a desired point in time
-#' @returns
-meng.rubin <- function(L_counts) {
+#'   sum(counts[idx] * log(p[idx]))
+#' }
+#'
+#' #' Calculate Multinomial Deviance
+#' #'
+#' #' @param p a k-dimensional vector characterizing the cell probabilities for a multinomial distribution
+#' #' @param counts a k-dimensional vector giving the observed counts for each category arising from a multinomial distribution
+#' #'
+#' #' @returns the multinomial deviance for a candidate probability vector compared to the MLE, scalar
+#' multinom_deviance <- function(p, counts) {
+#'
+#'   phat <- counts / sum(counts)
+#'
+#'   2 * (multinom_loglik(phat, counts) - multinom_loglik(p, counts))
+#' }
+#'
+#' simplex_grid <- function(n) {
+#'   g <- expand.grid(i = 0:n, j = 0:n)
+#'   g <- subset(g, i + j <= n)
+#'
+#'   transform(
+#'     g,
+#'     x1 = i / n,
+#'     x2 = j / n,
+#'     x3 = (n - i - j) / n
+#'   )[c("x1", "x2", "x3")]
+#' }
 
-  #candidate values for confidence region
-  df_p <- as.matrix(simplex_grid(1000))
-
-  #list of deviance values for candidate points under each imputation's estimate
-  s.e <- map(L_counts, function(counts) {
-
-    d <- apply(df_p, 1, function(p) multinom_deviance(p, counts))
-    dplyr::bind_cols(df_p, tibble::tibble(d = d))
-  })
-
-  #average deviance across imputations for each candidate point
-  Dbar <- dplyr::bind_cols(df_p, tibble::tibble(Dbar =  rowMeans(sapply(s.e, function(df) df$d))))
-
-}
 
 # Calculate Transition Matrix and Give Confidence Intervals ---------------
 
@@ -107,8 +86,7 @@ meng.rubin <- function(L_counts) {
 #'
 #' @param imp_obj Output from msmi.impute()
 #' @param times Vector of times at which to calculate state occupation probabilities
-#' @param int.type Type of confidence region to compute: "trWald" or "bayes" (default is "trWald")
-#' @param prior List of prior parameters for the Dirichlet distribution when int.type = "bayes" (default = NULL)
+#' @param int.type Type of confidence region to compute: "trWald" or "agresticoull" (default is "trWald")
 #' @param alpha Significance level for the confidence region (default is 0.05)
 #' @param vcov Logical indicating whether to return the variance-covariance matrices for the state occupation probabilities at each time (default is FALSE)
 #'
@@ -132,10 +110,15 @@ msmi.tprobs <- function(
   imp_obj = NULL,
   times = NULL,
   int.type = "trWald",
-  prior = NULL,
   alpha = 0.05,
   vcov = FALSE
 ) {
+
+  if (!(int.type %in% c("trWald", "agresticoull"))) {
+    stop("int.type must be one of 'trWald' or 'agresticoull'")
+  }
+
+
   #For each imputed dataset, calculate the state occupation probabilities at each time of interest
   empirical_probs <- purrr::map(imp_obj, function(df) {
     get_empirical_probs(df, times)
@@ -155,82 +138,83 @@ msmi.tprobs <- function(
   #Calculate Confidence Intervals
 
 
-  if (int.type == "bayes") {
-    #interpretation, adding alpha_i successes in each category at timepoint of interest
-
-    if (is.null(prior)) {
-      stop("When int.type = 'bayes', prior must be specified.")
-    }
-
-    #calculate posterior parameters for Dirichlet distribution at each time point and for each imputation
-    counts <- dplyr::bind_rows(empirical_probs, .id = "imp") %>%
-      dplyr::mutate(dplyr::across(
-        dplyr::starts_with("p"),
-        ~ .x * nrow(imp_obj[[1]])
-      ))
-    posterior <- counts %>%
-      dplyr::mutate(
-        a1 = p1 + prior[1],
-        a2 = p2 + prior[2],
-        a3 = p3 + prior[3]
-      ) %>%
-      dplyr::select(imp, time, a1, a2, a3) %>%
-      dplyr::group_by(time) %>%
-      dplyr::group_split()
-
-    n_draws <- 1000
-
-    cr_list <- purrr::map(posterior, function(df) {
-      # number of imputations
-      M <- nrow(df)
-
-      # store alpha vectors as a list
-      alpha_list <- lapply(seq_len(M), function(i) {
-        as.numeric(df[i, c("a1", "a2", "a3")])
-      })
-
-      #draw from each posterior and pool
-      p_draws <- purrr::map_dfr(alpha_list, function(a) {
-        draws <- gtools::rdirichlet(n_draws, a) %>% as.data.frame()
-        return(draws)
-      })
-
-      #mixture density at each draw
-      dens_mat <- sapply(alpha_list, function(a) {
-        gtools::ddirichlet(p_draws, a)
-      })
-      mix_density <- rowMeans(dens_mat)
-      p_mix <- cbind(p_draws, density = mix_density)
-
-      #HPD cutoff
-      cutoff <- stats::quantile(p_mix$density, probs = alpha)
-
-      #return convex hull for HPD region for this time (could not be ideal since HPD region not necessarily contiguous)
-      pts <- p_mix[p_mix$density >= cutoff, , drop = FALSE]
-      pts <- pts[, colnames(pts) != "density"]
-
-      chull <- grDevices::chull(pts)
-      p_hull <- pts[chull, ]
-
-      return(list(p.space = pts[chull, ]))
-    })
-
-    names(cr_list) <- times
-
-    return(list(
-      mi_estimate = mi_estimate,
-      int.type = int.type,
-      alpha = alpha,
-      cr_list = cr_list
-    ))
-
-  } else if (int.type %in% c("agresticoull", "trWald")) {
+  # if (int.type == "bayes") {
+  #   #interpretation, adding alpha_i successes in each category at timepoint of interest
+  #
+  #   if (is.null(prior)) {
+  #     stop("When int.type = 'bayes', prior must be specified.")
+  #   }
+  #
+  #   #calculate posterior parameters for Dirichlet distribution at each time point and for each imputation
+  #   counts <- dplyr::bind_rows(empirical_probs, .id = "imp") %>%
+  #     dplyr::mutate(dplyr::across(
+  #       dplyr::starts_with("p"),
+  #       ~ .x * nrow(imp_obj[[1]])
+  #     ))
+  #   posterior <- counts %>%
+  #     dplyr::mutate(
+  #       a1 = p1 + prior[1],
+  #       a2 = p2 + prior[2],
+  #       a3 = p3 + prior[3]
+  #     ) %>%
+  #     dplyr::select(imp, time, a1, a2, a3) %>%
+  #     dplyr::group_by(time) %>%
+  #     dplyr::group_split()
+  #
+  #   n_draws <- 1000
+  #
+  #   cr_list <- purrr::map(posterior, function(df) {
+  #     # number of imputations
+  #     M <- nrow(df)
+  #
+  #     # store alpha vectors as a list
+  #     alpha_list <- lapply(seq_len(M), function(i) {
+  #       as.numeric(df[i, c("a1", "a2", "a3")])
+  #     })
+  #
+  #     #draw from each posterior and pool
+  #     p_draws <- purrr::map_dfr(alpha_list, function(a) {
+  #       draws <- gtools::rdirichlet(n_draws, a) %>% as.data.frame()
+  #       return(draws)
+  #     })
+  #
+  #     #mixture density at each draw
+  #     dens_mat <- sapply(alpha_list, function(a) {
+  #       gtools::ddirichlet(p_draws, a)
+  #     })
+  #     mix_density <- rowMeans(dens_mat)
+  #     p_mix <- cbind(p_draws, density = mix_density)
+  #
+  #     #HPD cutoff
+  #     cutoff <- stats::quantile(p_mix$density, probs = alpha)
+  #
+  #     #return convex hull for HPD region for this time (could not be ideal since HPD region not necessarily contiguous)
+  #     pts <- p_mix[p_mix$density >= cutoff, , drop = FALSE]
+  #     pts <- pts[, colnames(pts) != "density"]
+  #
+  #     chull <- grDevices::chull(pts)
+  #     p_hull <- pts[chull, ]
+  #
+  #     return(list(p.space = pts[chull, ]))
+  #   })
+  #
+  #   names(cr_list) <- times
+  #
+  #   return(list(
+  #     mi_estimate = mi_estimate,
+  #     int.type = int.type,
+  #     alpha = alpha,
+  #     cr_list = cr_list
+  #   ))
+  #
+  # } else if (int.type %in% c("agresticoull", "trWald")) {
 
     n = nrow(imp_obj[[1]]) #sample size
     M <- length(imp_obj) #number of imputations
     k <- 3 #number of states, fixed at 3 for now
 
     if (int.type == "agresticoull") {
+
       #add 4/3 pseudo-counts to each category at each time point and for each imputation
       pseudo <- dplyr::bind_rows(empirical_probs, .id = "imp") %>%
         dplyr::mutate(dplyr::across(dplyr::starts_with("p"), ~ (.x*n +(4/3))/(n+4))) %>%
@@ -239,6 +223,21 @@ msmi.tprobs <- function(
                       p3_adj = p3) %>%
         dplyr::group_by(time) %>%
         dplyr::group_split()
+
+      #agresti-coull point estimate
+      mi_estimate_adj <- dplyr::bind_rows(empirical_probs, .id = "imputation") %>%
+        dplyr::mutate(dplyr::across(dplyr::starts_with("p"), ~ (.x*n +(4/3))/(n+4))) %>%
+        dplyr::rename(p1_adj = p1,
+                      p2_adj = p2,
+                      p3_adj = p3)
+        dplyr::group_by(time) %>%
+        dplyr::summarise(
+          dplyr::across(dplyr::ends_with("_adj"), \(x) mean(x, na.rm = TRUE)),
+          .groups = "drop"
+        ) %>%
+        as.data.frame()
+
+      rownames(mi_estimate_adj) <- mi_estimate_adj$time
 
       #adjusted estimates at each time for each imputation
       p_list <- purrr::map(pseudo, function(x) {
@@ -258,7 +257,7 @@ msmi.tprobs <- function(
           message(
             "At least one estimated state occupation probability is 0 at time ",
             unique(x$time),
-            ". Wald-type confidence regions are undefined. Try using int.type = 'bayes' instead."
+            "Wald-type confidence regions are undefined. Try using int.type = 'agresticoull' instead."
           )
           return(NULL)
         }
@@ -363,7 +362,10 @@ msmi.tprobs <- function(
     names(total_var_list) <- times
 
     #create return
-    #TO DO: return adjusted estimates for Agresti-Coull approach
+    if (int.type == "agresticoull") {
+      mi_estimate = mi_estimate_adj
+    }
+
     out <- list(
       mi_estimate = mi_estimate,
       unconstrained_estimate = unconstrained_estimate,
@@ -379,7 +381,4 @@ msmi.tprobs <- function(
 
     return(out)
 
-  } else {
-    stop("int.type must be one of 'trWald', 'agresticoull', or 'bayes'")
-  }
 }
