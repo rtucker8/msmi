@@ -9,7 +9,8 @@ msmi.impute(
   M,
   prefix.states = c("event", "t"),
   method = "marginal",
-  seed = sample(1:.Machine$integer.max, size = 1)
+  seed = sample(1:.Machine$integer.max, size = 1),
+  bootstrap = TRUE
 )
 }
 \arguments{

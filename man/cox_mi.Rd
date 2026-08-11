@@ -4,7 +4,7 @@
 \alias{cox_mi}
 \title{Layer 2 Imputation: Cox Model (Conditional) Approach}
 \usage{
-cox_mi(d)
+cox_mi(d, bootstrap = TRUE)
 }
 \arguments{
 \item{d}{A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran}

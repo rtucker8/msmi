@@ -23,9 +23,19 @@ cox_mi <- function(d, bootstrap = TRUE) {
     return(d %>% dplyr::select(-id))
   }
 
+  #Take boostrap sample
+  if (bootstrap) {
+    boot <- u[sample(1:nrow(u), replace = TRUE), ]
+  } else {
+    boot <- u
+  }
+
   #Estimate Survival function for ill to death sojourn time using coxph model with t1 as a covariate
   #each person has their own survival curve based on their time to illness
-  cox_model <- survival::coxph(survival::Surv(t2 - t1, event2) ~ t1, data = u)
+  cox_model <- survival::coxph(
+    survival::Surv(t2 - t1, event2) ~ t1,
+    data = boot
+  )
   surv_summary <- summary(survival::survfit(cox_model, newdata = dd))
 
   if (nrow(dd) > 1) {
@@ -135,10 +145,8 @@ marginal_mi <- function(d, bootstrap = TRUE) {
     #random boostrap sample of the original dataset to use for risk set construction
     if (bootstrap) {
       boot <- u[sample(1:nrow(u), replace = TRUE), ]
-      boot_dc <- boot[boot$ftype != 0, ] #complete cases in this bootstrap sample
     } else {
       boot <- u
-      boot_dc <- dc
     }
 
     # Fit Kaplan-Meier for transition from ill to death

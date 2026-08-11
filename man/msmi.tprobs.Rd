@@ -17,7 +17,7 @@ msmi.tprobs(
 
 \item{times}{Vector of times at which to calculate state occupation probabilities}
 
-\item{method}{The interval estimation method to use: "trWald", "agresticoull", "goodman" (default is "trWald")}
+\item{method}{The interval estimation method to use: "trWald" or "goodman" (default is "trWald")}
 
 \item{alpha}{Significance level for the confidence region (default is 0.05)}
 

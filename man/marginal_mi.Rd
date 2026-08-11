@@ -4,7 +4,7 @@
 \alias{marginal_mi}
 \title{Layer 2 Imputation: Marginal Approach}
 \usage{
-marginal_mi(d)
+marginal_mi(d, bootstrap = TRUE)
 }
 \arguments{
 \item{d}{A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran}

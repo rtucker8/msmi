@@ -4,7 +4,7 @@
 \alias{mici.impute}
 \title{Function to generate multiple imputations from the mici package by Elizabeth Chase}
 \usage{
-mici.impute(ftime = NULL, ftype = NULL, data = NULL, M = 200)
+mici.impute(ftime = NULL, ftype = NULL, data = NULL, M = 200, bootstrap)
 }
 \arguments{
 \item{ftime}{Either the name of the variable in the data that contains the event
