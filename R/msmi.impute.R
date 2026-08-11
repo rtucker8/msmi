@@ -26,6 +26,15 @@ cox_mi <- function(d, bootstrap = TRUE) {
   #Take boostrap sample
   if (bootstrap) {
     boot <- u[sample(1:nrow(u), replace = TRUE), ]
+    # u_complete <- u[u$event2 == 1 & u$event2 == 1, ]
+    # u_incomplete <- u[!(u$event1 == 1 & u$event2 == 1), ]
+
+    # boot_complete <- u_complete[sample(1:nrow(u_complete), replace = TRUE), ]
+    # boot_incomplete <- u_incomplete[
+    #   sample(1:nrow(u_incomplete), replace = TRUE),
+    # ]
+
+    # boot <- dplyr::bind_rows(boot_complete, boot_incomplete)
   } else {
     boot <- u
   }
@@ -145,6 +154,16 @@ marginal_mi <- function(d, bootstrap = TRUE) {
     #random boostrap sample of the original dataset to use for risk set construction
     if (bootstrap) {
       boot <- u[sample(1:nrow(u), replace = TRUE), ]
+
+      # u_complete <- u[u$event2 == 1 & u$event2 == 1, ]
+      # u_incomplete <- u[!(u$event1 == 1 & u$event2 == 1), ]
+
+      # boot_complete <- u_complete[sample(1:nrow(u_complete), replace = TRUE), ]
+      # boot_incomplete <- u_incomplete[
+      #   sample(1:nrow(u_incomplete), replace = TRUE),
+      # ]
+
+      # boot <- dplyr::bind_rows(boot_complete, boot_incomplete)
     } else {
       boot <- u
     }
