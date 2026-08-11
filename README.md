@@ -57,7 +57,7 @@ head(imps[[1]])
 #> 6 4.21332332      1 10.567040      1
 ```
 
-Now we can use `msmi.tprobs` to estimate the state occupation probabilities at time 4 and 'msmi.plot` to visualize the results :
+Now we can use `msmi.tprobs` to estimate the state occupation probabilities at time 4 and `msmi.plot` to visualize the results :
 
 ```r
 tprobs <- msmi.tprobs.v2(imps, times = c(2,4))
