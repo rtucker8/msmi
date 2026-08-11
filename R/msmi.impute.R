@@ -1,19 +1,16 @@
-
 # Cox Imputation ----------------------------------------------------------
-
 
 #' Layer 2 Imputation: Cox Model (Conditional) Approach
 #'
 #' @param d A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran
 #'
 #' @returns A data frame with imputed times for event2 where event2 was censored
-cox_mi <- function(d) {
-
+cox_mi <- function(d, bootstrap = TRUE) {
   #create ID column
   d$id <- seq_along(1:nrow(d))
 
   # Create data for transition 1->2 (ill to death)
-  u <- d[d$event1 == 1, ]  # All who became ill
+  u <- d[d$event1 == 1, ] # All who became ill
   u$sojourn23 <- u$t2 - u$t1
 
   # Identify individuals need imputation for t2
@@ -22,16 +19,18 @@ cox_mi <- function(d) {
   xt <- dd$t2 - dd$t1
 
   # Guard: nothing to impute for this iteration
-  if (nrow(dd) == 0) return(d %>% dplyr::select(-id))
+  if (nrow(dd) == 0) {
+    return(d %>% dplyr::select(-id))
+  }
 
   #Estimate Survival function for ill to death sojourn time using coxph model with t1 as a covariate
   #each person has their own survival curve based on their time to illness
-  cox_model <- survival::coxph(survival::Surv(t2-t1, event2) ~ t1, data=u)
+  cox_model <- survival::coxph(survival::Surv(t2 - t1, event2) ~ t1, data = u)
   surv_summary <- summary(survival::survfit(cox_model, newdata = dd))
 
   if (nrow(dd) > 1) {
     surv_probs <- surv_summary$surv[dim(surv_summary$surv)[1], ]
-  } else if(nrow(dd) == 1) {
+  } else if (nrow(dd) == 1) {
     surv_probs <- surv_summary$surv[length(surv_summary$surv)]
   }
 
@@ -41,7 +40,7 @@ cox_mi <- function(d) {
   if (nrow(dd) > 1) {
     prob_diffs <- apply(surv_summary$surv, 2, function(x) -diff(c(1, x)))
     prob_diffs_list <- split(prob_diffs, col(prob_diffs))
-  }else if(nrow(dd) == 1){
+  } else if (nrow(dd) == 1) {
     prob_diffs <- -diff(c(1, surv_summary$surv))
     prob_diffs_list <- list(prob_diffs)
   }
@@ -73,13 +72,18 @@ cox_mi <- function(d) {
 
     #ensure at least one positive probability
     if (sum(prob_diffs[[jj]][sub]) == 0) {
-      prob_diffs[[jj]][sub][1] = 1
+      prob_diffs[[jj]][sub][1] <- 1
     }
 
     # Sample time from illness to death
     if (sum(sub) > 1) {
-      cts[jj] <- resample(surv_times[[jj]][sub], 1,replace=TRUE, prob = prob_diffs[[jj]][sub])
-    } else if(sum(sub) == 1){
+      cts[jj] <- resample(
+        surv_times[[jj]][sub],
+        1,
+        replace = TRUE,
+        prob = prob_diffs[[jj]][sub]
+      )
+    } else if (sum(sub) == 1) {
       cts[jj] <- surv_times[[jj]][sub]
     } else {
       cts[jj] <- max(u$sojourn23) + 1 #shadow event time
@@ -102,13 +106,12 @@ cox_mi <- function(d) {
 #' @param d A data frame with one row per subject and the columns event1, t1, event2, t2 on which mici::mici.impute was previously ran
 
 #' @returns A data frame with imputed times for event2 where event2 was censored
-marginal_mi <- function(d) {
-
+marginal_mi <- function(d, bootstrap = TRUE) {
   #Add an ID column
   d$id <- seq(1, nrow(d))
 
   # Create data for transition 1->2 (ill to death)
-  u <- d[d$event1 == 1, ]  # All who became ill
+  u <- d[d$event1 == 1, ] # All who became ill
   u$sojourn23 <- u$t2 - u$t1
 
   # Identify individuals need imputation for t2
@@ -116,48 +119,75 @@ marginal_mi <- function(d) {
   dd <- d[d$event2 == 0, ]
   xt <- dd$t2 - dd$t1
 
-  # Guard: nothing to impute for this iteration
-  if (nrow(dd) == 0) return(d %>% dplyr::select(-id))
+  #  Impute shadow time if no observed transitions
+  if (nrow(d[d$event1 == 1 & d$event2 == 1, ]) == 0) {
+    t_shadow <- max(u$sojourn23) + 1
 
-  # Fit Kaplan-Meier for transition from ill to death
-  km_summary <- summary(survival::survfit(survival::Surv(sojourn23, event2) ~ 1, data=u,timefix = FALSE))
-  surv_probs <- km_summary$surv[length(km_summary$surv)]
-  surv_times <- km_summary$time
-  prob_diffs <- -diff(c(1, km_summary$surv))
+    dd$event2 <- 1
+    dd$t2 <- dd$t1 + t_shadow
 
-  # Handle tail probability (if survival doesn't reach 0)
-  if (surv_probs > 0) {
-    prob_diffs <- c(prob_diffs, surv_probs)
-    surv_times <- c(surv_times, max(u$sojourn23) + 1)
-  }
+    ipd <- dplyr::bind_rows(dd, dc) %>%
+      dplyr::arrange(id) %>%
+      dplyr::select(-id)
 
+    return(ipd)
+  } else {
+    #random boostrap sample of the original dataset to use for risk set construction
+    if (bootstrap) {
+      boot <- u[sample(1:nrow(u), replace = TRUE), ]
+      boot_dc <- boot[boot$ftype != 0, ] #complete cases in this bootstrap sample
+    } else {
+      boot <- u
+      boot_dc <- dc
+    }
 
-  # Impute times for censored individuals
-  cts <- NULL
-  for (jj in seq_along(xt)) {
+    # Fit Kaplan-Meier for transition from ill to death
+    km_summary <- summary(survival::survfit(
+      survival::Surv(sojourn23, event2) ~ 1,
+      data = boot,
+      timefix = FALSE
+    ))
+    surv_probs <- km_summary$surv[length(km_summary$surv)]
+    surv_times <- km_summary$time
+    prob_diffs <- -diff(c(1, km_summary$surv))
 
-    # Find times greater than censoring time
-    sub <- surv_times > xt[jj]
+    # Handle tail probability (if survival doesn't reach 0)
+    if (surv_probs > 0) {
+      prob_diffs <- c(prob_diffs, surv_probs)
+      surv_times <- c(surv_times, max(u$sojourn23) + 1) #retain shadow time from original dataset (not boostrap sample)
+    }
+
+    # Impute times for censored individuals
+    cts <- NULL
+    for (jj in seq_along(xt)) {
+      # Find times greater than censoring time
+      sub <- surv_times > xt[jj]
 
       # Sample time from illness to death
       if (sum(sub) > 1) {
-        cts[jj] <- resample(surv_times[sub], 1,replace=TRUE, prob = prob_diffs[sub])
-      } else if(sum(sub) == 1){
+        cts[jj] <- resample(
+          surv_times[sub],
+          1,
+          replace = TRUE,
+          prob = prob_diffs[sub]
+        )
+      } else if (sum(sub) == 1) {
         cts[jj] <- surv_times[sub]
       } else {
         cts[jj] <- max(u$sojourn23) + 1 #shadow event time
       }
+    }
 
+    # Update death time and event indicator
+    dd$event2 <- 1
+    dd$t2 <- dd$t1 + cts
+    ipd <- dplyr::bind_rows(dd, dc) %>%
+      dplyr::arrange(id) %>%
+      dplyr::select(-id)
+
+    return(ipd)
   }
-
-  # Update death time and event indicator
-  dd$event2 <- 1
-  dd$t2 <- dd$t1 + cts
-  ipd <- dplyr::bind_rows(dd, dc) %>% dplyr::arrange(id) %>% dplyr::select(-id)
-
-  return(ipd)
 }
-
 
 
 # Wrapper Function --------------------------------------------------------
@@ -178,8 +208,14 @@ marginal_mi <- function(d) {
 #' msmi.impute(sim.data, M = 5, prefix.states = c("event", "t"), method = "marginal")
 #' @returns A list of length M, where each element is a data frame with imputed times for censored events
 #' @export
-msmi.impute <- function(dat, M, prefix.states = c("event", "t"), method = "marginal", seed = sample(1:.Machine$integer.max, size=1)) {
-
+msmi.impute <- function(
+  dat,
+  M,
+  prefix.states = c("event", "t"),
+  method = "marginal",
+  seed = sample(1:.Machine$integer.max, size = 1),
+  bootstrap = TRUE
+) {
   #Check inputs
   if (length(prefix.states) != 2) {
     stop("prefix.states must be a character vector of length 2")
@@ -191,7 +227,6 @@ msmi.impute <- function(dat, M, prefix.states = c("event", "t"), method = "margi
     stop("M must be an integer")
   }
 
-
   #set seed
   set.seed(seed)
 
@@ -199,79 +234,99 @@ msmi.impute <- function(dat, M, prefix.states = c("event", "t"), method = "margi
   d <- data.frame(row.names = 1:nrow(dat))
 
   for (i in 1:2) {
-    if (!all(c(paste0(prefix.states[1], i), paste0(prefix.states[2], i)) %in% colnames(dat))) {
-      stop(paste0("Columns ", paste0(prefix.states[1], i), " and ", paste0(prefix.states[2], i), " must be present in the data"))
+    if (
+      !all(
+        c(paste0(prefix.states[1], i), paste0(prefix.states[2], i)) %in%
+          colnames(dat)
+      )
+    ) {
+      stop(paste0(
+        "Columns ",
+        paste0(prefix.states[1], i),
+        " and ",
+        paste0(prefix.states[2], i),
+        " must be present in the data"
+      ))
     }
-    d[paste0("event", i)]  <- dat[, paste0(prefix.states[1], i)]
-    d[paste0("t", i)]  <- dat[, paste0(prefix.states[2], i)]
-
+    d[paste0("event", i)] <- dat[, paste0(prefix.states[1], i)]
+    d[paste0("t", i)] <- dat[, paste0(prefix.states[2], i)]
   }
   #d now has columns event1, t1, event2, t2
 
   #prepare data in competing events structure for time to first event
-  d.comp <- d %>% dplyr::mutate(t.first = pmin(t1, t2),
-                                event.first = dplyr::case_when(t1 < t2 & event1 == 1 ~ 1,
-                                                               !(t1 < t2) & event2 == 1 ~ 2,
-                                                               TRUE ~ 0))
+  d.comp <- d %>%
+    dplyr::mutate(
+      t.first = pmin(t1, t2),
+      event.first = dplyr::case_when(
+        t1 < t2 & event1 == 1 ~ 1,
+        !(t1 < t2) & event2 == 1 ~ 2,
+        TRUE ~ 0
+      )
+    )
   #multiple imputations for time to first event using mici.impute
-  d.imp1 <- mici.impute("t.first", "event.first", data = d.comp, M = M)
+  d.imp1 <- mici.impute(
+    "t.first",
+    "event.first",
+    data = d.comp,
+    M = M,
+    bootstrap
+  )
 
   #put data back into the original format for second layer of imputation
   d.imp1 <- purrr::map(d.imp1, function(x) {
-
     idx2 <- x$ftype == 2 & x$event.first == 0 #indices for originally censored people who were imputed to have event type 2 first
     idx1 <- x$ftype == 1 & x$event.first == 0 #indices for originally censored people who were imputed to have event type 1 first
 
-    x$event1[idx2] <- 0  #those imputed to have event type 2 first did not have event 1
-    x$event1[idx1] <- 1  #those imputed to have event type 1 first did have event 1
+    x$event1[idx2] <- 0 #those imputed to have event type 2 first did not have event 1
+    x$event1[idx1] <- 1 #those imputed to have event type 1 first did have event 1
     x$t1[idx2 | idx1] <- x$ftime[idx2 | idx1] #everyone who was censored and has their t1 updated to the imputed time
-    x$event2[idx2] <- 1  #those imputed to have event type 2 first did have event 2
-    x$event2[idx1] <- 0  #those imputed to have event type 1 first did not have event 2
+    x$event2[idx2] <- 1 #those imputed to have event type 2 first did have event 2
+    x$event2[idx1] <- 0 #those imputed to have event type 1 first did not have event 2
     x$t2[idx2 | idx1] <- x$ftime[idx2 | idx1] #everyone who was censored has their t2 updated to the imputed time
 
     x %>% dplyr::select(t1, event1, t2, event2)
   })
 
-
   #second layer of imputation for time to second event
-  u <- d[d$event1 == 1 & d$event2 == 1, ]
-  if (nrow(u) ==0) {
-    warning("There are no uncensored transitions between the first and second event in this dataset.
-            The second layer of imputation cannot be performed.")
-    return(d.imp1)
-  }
-
 
   dd <- d[d$event2 == 0, ]
   if (nrow(dd) == 0) {
-    warning("There was no censoring in the second layer of imputation for this dataset.
-            Imputation was not needed.")
+    warning(
+      "There was no censoring in the second layer of imputation for this dataset.
+            Imputation was not needed."
+    )
     return(d.imp1)
+  }
+
+  u <- d[d$event1 == 1 & d$event2 == 1, ]
+  if (nrow(u) == 0) {
+    warning(
+      "Note: There are no uncensored transitions between the first and second event in this dataset.
+            Imputing a shadow time for all censored observations."
+    )
   }
 
   if (method == "marginal") {
     d.imp2 <- purrr::map(d.imp1, function(x) {
-      marginal_mi(x)
+      marginal_mi(x, bootstrap)
     })
-
   } else if (method == "cox") {
     #check if there are enough uncensored observations to fit the cox model
     u <- dat[dat$event1 == 1 & dat$event2 == 1, ]
     if (nrow(u) <= 5) {
-      warning("There are very few uncensored observations after the first round of imputation for this dataset.
-                Cox imputation models may have trouble converging. Changing to the marginal imputation method instead.")
+      warning(
+        "There are very few uncensored observations after the first round of imputation for this dataset.
+                Cox imputation models may have trouble converging. Changing to the marginal imputation method instead."
+      )
       d.imp2 <- purrr::map(d.imp1, function(x) {
-        marginal_mi(x)
+        marginal_mi(x, bootstrap)
       })
     } else {
       d.imp2 <- purrr::map(d.imp1, function(x) {
-        cox_mi(x)
+        cox_mi(x, bootstrap)
       })
     }
   }
 
   return(d.imp2)
 }
-
-
-

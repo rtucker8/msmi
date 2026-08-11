@@ -2,9 +2,9 @@
 
 export("%>%")
 export(msmi.impute)
+export(msmi.plot)
 export(msmi.tprobs)
-export(plot_region)
+export(msmi.tprobs.new)
 import(dplyr)
-import(flexsurv)
 import(survival)
 importFrom(magrittr,"%>%")

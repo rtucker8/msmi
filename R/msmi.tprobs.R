@@ -13,7 +13,6 @@ get_empirical_probs <- function(df, times) {
     is_healthy <- df$t1 > t & df$t2 > t
     is_ill <- df$t1 <= t & df$t2 > t
     is_dead <- df$t2 <= t
-
     # Calculate proportions in each state
     n <- nrow(df)
     p1 <- sum(is_healthy) / n
@@ -31,54 +30,6 @@ get_empirical_probs <- function(df, times) {
   bind_rows(results)
 }
 
-#' #' Calculate Multinomial Distribution Log-Likelihood
-#' #'
-#' #' @param p a k-dimensional vector characterizing the cell probabilities for a multinomial distribution
-#' #' @param counts a k-dimensional vector giving the observed counts for each category arising from a multinomial distribution
-#' #'
-#' #' @returns the multinomial log-likelihood, scalar
-#' multinom_loglik <- function(p, counts) {
-#'
-#'   if(any(p < 0))
-#'     return(-Inf)
-#'
-#'   if(abs(sum(p) - 1) > 1e-10)
-#'     return(-Inf)
-#'
-#'   # impossible point
-#'   if(any(counts > 0 & p == 0))
-#'     return(-Inf)
-#'
-#'   idx <- counts > 0
-#'
-#'   sum(counts[idx] * log(p[idx]))
-#' }
-#'
-#' #' Calculate Multinomial Deviance
-#' #'
-#' #' @param p a k-dimensional vector characterizing the cell probabilities for a multinomial distribution
-#' #' @param counts a k-dimensional vector giving the observed counts for each category arising from a multinomial distribution
-#' #'
-#' #' @returns the multinomial deviance for a candidate probability vector compared to the MLE, scalar
-#' multinom_deviance <- function(p, counts) {
-#'
-#'   phat <- counts / sum(counts)
-#'
-#'   2 * (multinom_loglik(phat, counts) - multinom_loglik(p, counts))
-#' }
-#'
-#' simplex_grid <- function(n) {
-#'   g <- expand.grid(i = 0:n, j = 0:n)
-#'   g <- subset(g, i + j <= n)
-#'
-#'   transform(
-#'     g,
-#'     x1 = i / n,
-#'     x2 = j / n,
-#'     x3 = (n - i - j) / n
-#'   )[c("x1", "x2", "x3")]
-#' }
-
 
 # Calculate Transition Matrix and Give Confidence Intervals ---------------
 
@@ -86,19 +37,18 @@ get_empirical_probs <- function(df, times) {
 #'
 #' @param imp_obj Output from msmi.impute()
 #' @param times Vector of times at which to calculate state occupation probabilities
-#' @param int.type Type of confidence region to compute: "trWald" or "agresticoull" (default is "trWald")
+#' @param method The interval estimation method to use: "trWald" or "goodman" (default is "trWald")
 #' @param alpha Significance level for the confidence region (default is 0.05)
 #' @param vcov Logical indicating whether to return the variance-covariance matrices for the state occupation probabilities at each time (default is FALSE)
 #'
 #' @returns A list with the following components:
 #'  \item{mi_estimate}{A data frame with the multiple imputation point estimates
 #' of state occupation probabilities at each time}
-#' \item{unconstrained_estimate}{(if int.type = "trWald") A data frame with the multiple imputation point estimates}
-#' \item{int.type}{The type of confidence interval used}
+#' \item{method}{The method used for confidence region construction}
 #' \item{alpha}{The significance level for the confidence region}
-#' \item{vcov}{(if vcov = TRUE and int.type = "trWald") A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
+#' \item{vcov}{(if vcov = TRUE and method = "trWald") A list of variance-covariance matrices for the state occupation probabilities at each time in the unconstrained space}
 #' \item{cr_list}{A list of confidence regions (defined via convex hulls) for the state occupation probabilities at each time
-#'  in the (1) (if int.type = "trWald") unconstrained 2D space and (2) the probability space.}
+#'  in the probability space.}
 #'
 #' @export
 #'
@@ -106,26 +56,25 @@ get_empirical_probs <- function(df, times) {
 #' imps <- msmi.impute(dat = sim.data, M = 5,
 #'             prefix.states = c("event", "t"), method = "marginal")
 #' msmi.tprobs(imp_obj = imps, times = seq(1, 5, 1))
+
 msmi.tprobs <- function(
   imp_obj = NULL,
   times = NULL,
-  int.type = "trWald",
+  method = "trWald",
   alpha = 0.05,
   vcov = FALSE
 ) {
-
-  if (!(int.type %in% c("trWald", "agresticoull"))) {
-    stop("int.type must be one of 'trWald' or 'agresticoull'")
+  if (!(method %in% c("trWald", "goodman"))) {
+    stop("method must be one of 'trWald' or 'goodman'")
   }
 
-
   #For each imputed dataset, calculate the state occupation probabilities at each time of interest
-  empirical_probs <- purrr::map(imp_obj, function(df) {
+  empirical_probs <- purrr::map_dfr(imp_obj, function(df) {
     get_empirical_probs(df, times)
   })
 
   #Rubin's Rules Point Estimate: Average empirical probabilities across imputations for each simulated dataset
-  mi_estimate <- dplyr::bind_rows(empirical_probs, .id = "imputation") %>%
+  mi_estimate <- empirical_probs %>%
     dplyr::group_by(time) %>%
     dplyr::summarise(
       dplyr::across(dplyr::starts_with("p"), \(x) mean(x, na.rm = TRUE)),
@@ -137,12 +86,11 @@ msmi.tprobs <- function(
 
   #Calculate Confidence Intervals
 
-
-  # if (int.type == "bayes") {
+  # if (method == "bayes") {
   #   #interpretation, adding alpha_i successes in each category at timepoint of interest
   #
   #   if (is.null(prior)) {
-  #     stop("When int.type = 'bayes', prior must be specified.")
+  #     stop("When method = 'bayes', prior must be specified.")
   #   }
   #
   #   #calculate posterior parameters for Dirichlet distribution at each time point and for each imputation
@@ -202,37 +150,87 @@ msmi.tprobs <- function(
   #
   #   return(list(
   #     mi_estimate = mi_estimate,
-  #     int.type = int.type,
+  #     method = method,
   #     alpha = alpha,
   #     cr_list = cr_list
   #   ))
   #
-  # } else if (int.type %in% c("agresticoull", "trWald")) {
+  # }
+  #
+  #
+  n <- nrow(imp_obj[[1]]) #sample size
+  M <- length(imp_obj) #number of imputations
+  k <- 3 #number of states, fixed at 3
 
-    n = nrow(imp_obj[[1]]) #sample size
+  if (method == "goodman") {
+    pooled_goodman <- purrr::map(times, function(t) {
+      # Average estimates across imputations
+
+      d <- empirical_probs %>%
+        dplyr::filter(time == t) %>%
+        dplyr::select(dplyr::starts_with("p")) %>%
+        as.matrix()
+
+      mean_q <- colMeans(d)
+
+      # Between and within impuation variance
+      var.between <- apply(d, 2, var)
+      var.within <- colMeans(d * (1 - d) / n)
+      r.m <- (1 + (1 / M)) * (var.between / var.within)
+
+      #Reference distribution
+      v <- (M - 1) * (1 + (1 / r.m))^2
+
+      #Lott and Reiter's Ad Hoc Solution for undefined r.m
+      r.m[is.nan(r.m)] <- 0
+      v[is.nan(v)] <- Inf
+
+      #Critical value
+      crit_value <- qt(1 - (alpha / (2 * k)), df = v)
+
+      #Interval construction
+      t_n <- (crit_value^2) / n
+      tr_n <- (crit_value^2) * r.m / n
+      q_sum <- 2 * mean_q + t_n + tr_n
+      one_sum <- 2 * (1 + t_n + tr_n)
+
+      centerpoint <- q_sum / one_sum
+      summand <- sqrt((q_sum^2 / one_sum^2) - (2 * (mean_q^2) / one_sum))
+
+      lower <- centerpoint - summand
+      upper <- centerpoint + summand
+
+      tibble(est = mean_q, lower = lower, upper = upper)
+    })
+    names(pooled_goodman) <- as.character(times)
+
+    cr_list <- purrr::map(pooled_goodman, function(d) {
+      rectangle_simplex(lower = d$lower, upper = d$upper)
+    })
+  } else if (method %in% c("agresticoull", "trWald")) {
+    n <- nrow(imp_obj[[1]]) #sample size
     M <- length(imp_obj) #number of imputations
     k <- 3 #number of states, fixed at 3 for now
 
-    if (int.type == "agresticoull") {
-
+    if (method == "agresticoull") {
       #add 4/3 pseudo-counts to each category at each time point and for each imputation
-      pseudo <- dplyr::bind_rows(empirical_probs, .id = "imp") %>%
-        dplyr::mutate(dplyr::across(dplyr::starts_with("p"), ~ (.x*n +(4/3))/(n+4))) %>%
-        dplyr::rename(p1_adj = p1,
-                      p2_adj = p2,
-                      p3_adj = p3) %>%
+      pseudo <- empirical_probs %>%
+        dplyr::mutate(dplyr::across(
+          dplyr::starts_with("p"),
+          ~ (.x * n + (4 / 3)) / (n + 4)
+        )) %>%
         dplyr::group_by(time) %>%
         dplyr::group_split()
 
       #agresti-coull point estimate
-      mi_estimate_adj <- dplyr::bind_rows(empirical_probs, .id = "imputation") %>%
-        dplyr::mutate(dplyr::across(dplyr::starts_with("p"), ~ (.x*n +(4/3))/(n+4))) %>%
-        dplyr::rename(p1_adj = p1,
-                      p2_adj = p2,
-                      p3_adj = p3)
+      mi_estimate_adj <- empirical_probs %>%
+        dplyr::mutate(dplyr::across(
+          dplyr::starts_with("p"),
+          ~ (.x * n + (4 / 3)) / (n + 4)
+        )) %>%
         dplyr::group_by(time) %>%
         dplyr::summarise(
-          dplyr::across(dplyr::ends_with("_adj"), \(x) mean(x, na.rm = TRUE)),
+          dplyr::across(dplyr::starts_with("p"), \(x) mean(x, na.rm = TRUE)),
           .groups = "drop"
         ) %>%
         as.data.frame()
@@ -241,12 +239,11 @@ msmi.tprobs <- function(
 
       #adjusted estimates at each time for each imputation
       p_list <- purrr::map(pseudo, function(x) {
-        m <- as.matrix(x[, c("p1_adj", "p2_adj", "p3_adj")])
+        m <- as.matrix(x[, c("p1", "p2", "p3")])
         return(m)
       })
-    } else if (int.type == "trWald") {
-
-      ps <- dplyr::bind_rows(empirical_probs) %>%
+    } else if (method == "trWald") {
+      ps <- empirical_probs %>%
         dplyr::group_by(time) %>%
         dplyr::group_split()
 
@@ -257,7 +254,7 @@ msmi.tprobs <- function(
           message(
             "At least one estimated state occupation probability is 0 at time ",
             unique(x$time),
-            "Wald-type confidence regions are undefined. Try using int.type = 'agresticoull' instead."
+            ". Wald-type confidence regions are undefined. Try using method = 'agresticoull' instead."
           )
           return(NULL)
         }
@@ -290,8 +287,6 @@ msmi.tprobs <- function(
       data.frame(time = as.numeric(t), theta1 = x[1], theta2 = x[2])
     })
 
-    rownames(unconstrained_estimate) <- unconstrained_estimate$time
-
     #between variance: 1/(M-1)*sum[(x-x_est)'(x-x_est)] {Note: inner product because x_est is a row vector in R}
     dif_list <- purrr::map2(x_list, x_est, function(x, est) {
       if (is.null(x) || is.null(est)) {
@@ -308,12 +303,12 @@ msmi.tprobs <- function(
     })
 
     compute_within_var_mat <- function(row, n) {
-      mat = matrix(0, k - 1, k - 1)
-      ref = row[k]
+      mat <- matrix(0, k - 1, k - 1)
+      ref <- row[k]
 
-      var_mat = diag(1 / row[1:(k - 1)])
-      cov_mat = matrix(1 / ref, nrow = k - 1, ncol = k - 1)
-      mat = (var_mat + cov_mat) / n
+      var_mat <- diag(1 / row[1:(k - 1)])
+      cov_mat <- matrix(1 / ref, nrow = k - 1, ncol = k - 1)
+      mat <- (var_mat + cov_mat) / n
 
       return(mat)
     }
@@ -355,30 +350,27 @@ msmi.tprobs <- function(
       )
       ps <- t(apply(thetas, 1, multinomial_logit_inverse))
 
-      return(list(unconstrained = thetas, p.space = ps))
+      return(ps)
     })
 
     names(cr_list) <- times
     names(total_var_list) <- times
+  }
+  #create return
+  if (method == "agresticoull") {
+    mi_estimate <- mi_estimate_adj
+  }
 
-    #create return
-    if (int.type == "agresticoull") {
-      mi_estimate = mi_estimate_adj
-    }
+  out <- list(
+    mi_estimate = mi_estimate,
+    method = method,
+    alpha = alpha,
+    cr_list = cr_list
+  )
 
-    out <- list(
-      mi_estimate = mi_estimate,
-      unconstrained_estimate = unconstrained_estimate,
-      int.type = int.type,
-      alpha = alpha,
-      cr_list = cr_list
-    )
+  if (vcov) {
+    out$vcov <- total_var_list
+  }
 
-    if (vcov) {
-      out$vcov <- total_var_list
-      out$w.in <- within_var_list
-    }
-
-    return(out)
-
+  return(out)
 }

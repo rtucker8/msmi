@@ -29,120 +29,148 @@
 #' M dataframes store the original inputs (without imputation).
 #' @import dplyr
 #' @import survival
-#' @import flexsurv
-mici.impute <- function(ftime = NULL,
-                        ftype = NULL,
-                        data = NULL,
-                        M = 200){
-  if (!is.null(data)){
+mici.impute <- function(
+  ftime = NULL,
+  ftype = NULL,
+  data = NULL,
+  M = 200,
+  bootstrap
+) {
+  if (!is.null(data)) {
     ftime <- data[[ftime]]
     ftype <- data[[ftype]]
 
-    if (!is.vector(ftime)){stop("ftime must contain numeric event times.")}
-    if (!is.vector(ftype)){stop("ftype must contain numeric event types.")}
+    if (!is.vector(ftime)) {
+      stop("ftime must contain numeric event times.")
+    }
+    if (!is.vector(ftype)) {
+      stop("ftype must contain numeric event types.")
+    }
 
     u <- data
     u$ftime <- ftime
     u$ftype <- ftype
     u$id <- c(1:length(ftime))
+  } else {
+    if (!is.vector(ftime)) {
+      stop("ftime must contain numeric event times.")
+    }
+    if (!is.vector(ftype)) {
+      stop("ftype must contain numeric event types.")
+    }
 
-  } else{
-    if (!is.vector(ftime)){stop("ftime must contain numeric event times.")}
-    if (!is.vector(ftype)){stop("ftype must contain numeric event types.")}
-
-    u <- data.frame("time" = ftime,
-                    "type" = ftype,
-                    "ftime" = ftime,
-                    "ftype" = ftype,
-                    "id" = c(1:length(ftime)))
+    u <- data.frame(
+      "time" = ftime,
+      "type" = ftype,
+      "ftime" = ftime,
+      "ftype" = ftype,
+      "id" = c(1:length(ftime))
+    )
   }
 
-  dc <- u[u$ftype != 0, ] ## complete cases
   dd <- u[u$ftype == 0, ] ##cases that need imputation
-
-  if (nrow(dd)==nrow(u)){
-    warning("All observations in this dataset are censored; imputation
-         cannot be performed.")
-    ipd <- select(u, -id)
-    myimps <- list(ipd)
-
-    return(myimps)
-  }
-
-  if (length(which(u$ftype==1))==0){
-    warning("The event-of-interest does not appear in these data.")
-    last_event <- -Inf
-  } else{
-    last_event <- max(u$ftime[u$ftype==1])
-  }
-
-  if (nrow(dc)==nrow(u)){
-    warning("There was no censoring in this dataset.
-            Imputation was not needed.")
-    ipd <- select(u, -id)
-    myimps <- list(ipd)
-
-    return(myimps)
-  }
-
+  dc <- u[u$ftype != 0, ] ## complete cases
   xt <- dd$ftime
   n <- nrow(u)
-  myimps <- list()
 
-  #KM Fit
-  g <- summary(survfit(Surv(ftime, ftype != 0) ~ 1, data = u, timefix = FALSE))
-  gm <- g$surv[length(g$surv)]
-  w <- g$time
-  wp <- -diff(c(1, g$surv))
+  if (nrow(dd) == nrow(u)) {
+    warning(
+      "All observations in this dataset are censored; imputation
+         cannot be performed."
+    )
+    ipd <- select(u, -id)
+    myimps <- list(ipd)
 
-  if (gm > 0) {
-    wp <- c(wp, gm)
-    w <- c(w, max(u$ftime) + 1)
+    return(myimps)
   }
 
+  if (length(which(u$ftype == 1)) == 0) {
+    warning("The event-of-interest does not appear in these data.")
+  }
+
+  if (nrow(dc) == nrow(u)) {
+    warning(
+      "There was no censoring in this dataset.
+            Imputation was not needed."
+    )
+    ipd <- select(u, -id)
+    myimps <- list(ipd)
+
+    return(myimps)
+  }
+
+  myimps <- list()
+
   for (j in 1:M) {
+    #NEW 17JULY2026: Boostrap Step
+    if (bootstrap) {
+      boot <- u[sample(1:nrow(u), replace = TRUE), ]
+      boot_dc <- boot[boot$ftype != 0, ] #complete cases in this bootstrap sample
+    } else {
+      boot <- u
+      boot_dc <- dc
+    }
+
+    #KM Fit
+    g <- summary(survfit(
+      Surv(ftime, ftype != 0) ~ 1,
+      data = boot,
+      timefix = FALSE
+    ))
+    gm <- g$surv[length(g$surv)]
+    w <- g$time
+    wp <- -diff(c(1, g$surv))
+
+    if (gm > 0) {
+      wp <- c(wp, gm)
+      w <- c(w, max(u$ftime) + 1) #shadow time from original dataset
+    }
+
     cts <- NULL
     cevent <- NULL
     for (jj in 1:length(xt)) {
-
-      sub = w > xt[jj]
+      sub <- w > xt[jj]
 
       #Impute event times and types
-        if (gm > 0) {
-          if (length(w[sub]) == 1) {
-            cts[jj] <- w[sub]
-            cevent[jj] <- resample(c(1:2), size = 1)
+      if (gm > 0) {
+        if (length(w[sub]) == 1) {
+          cts[jj] <- w[sub]
+          cevent[jj] <- resample(c(1:2), size = 1)
+        } else {
+          cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
+          if (cts[jj] <= max(boot_dc$ftime)) {
+            cevent[jj] <-
+              resample(boot_dc$ftype[near(boot_dc$ftime, cts[jj])], size = 1)
           } else {
-            cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
-            if (cts[jj] <= max(dc$ftime)) {
-              cevent[jj] <-
-                resample(dc$ftype[near(dc$ftime, cts[jj])], size = 1)
-            } else{
-              cevent[jj] <- resample(c(1:2), size = 1)
-            }
-          }
-        } else{
-          if (length(w[sub]) == 0) {
-            cts[jj] <- max(u$ftime) + 1
             cevent[jj] <- resample(c(1:2), size = 1)
-          } else if (length(w[sub]) == 1) {
-            cts[jj] <- w[sub]
-            cevent[jj] <- resample(dc$ftype[near(dc$ftime, cts[jj])], size = 1)
-          } else {
-            cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
-            cevent[jj] <- resample(dc$ftype[near(dc$ftime, cts[jj])], size = 1)
           }
         }
-
+      } else {
+        if (length(w[sub]) == 0) {
+          cts[jj] <- max(u$ftime) + 1 #shadow time from original dataset (not bootstrap)
+          cevent[jj] <- resample(c(1:2), size = 1)
+        } else if (length(w[sub]) == 1) {
+          cts[jj] <- w[sub]
+          cevent[jj] <- resample(
+            boot_dc$ftype[near(boot_dc$ftime, cts[jj])],
+            size = 1
+          )
+        } else {
+          cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
+          cevent[jj] <- resample(
+            boot_dc$ftype[near(boot_dc$ftime, cts[jj])],
+            size = 1
+          )
+        }
+      }
     }
 
-    dd$ftime = cts
-    dd$ftype = cevent
-    ipd = bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
+    dd$ftime <- cts
+    dd$ftype <- cevent
+    ipd <- bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
 
     myimps <- append(myimps, list(ipd))
   }
 
   return(myimps)
 }
-
