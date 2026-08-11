@@ -69,6 +69,6 @@ msmi.plot(tprobs, 4)
 
 ## References
 
-This work is currently ongoing. A reference to the method paper will be added when available.
+This work is currently ongoing \[Gonzalez, Dempsey, and Boonstra (2026+)\]. A reference to the method paper will be added when available.
 
 
