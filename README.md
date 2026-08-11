@@ -9,7 +9,8 @@
 
 The goal of msmi is to use tools from multiple imputation to handle
 missing data present in multistate models subject to censoring and
-estimate state occupation probabilities from these data.
+estimate state occupation probabilities from these data. Currently, msmi is
+only suitable for the irreversible illness-death model.
 
 ## Installation
 
@@ -22,6 +23,13 @@ remotes::install_github("rtucker8/msmi")
 ```
 
 ## Usage
+
+This package has three main functions. `msmi.impute` performs the imputation
+algorithm and outputs a list of imputed datasets with no censoring. 
+`msmi.tprobs` uses the imputed datasets to calculate the stat occupation
+probabilities and the associated uncertainties at a set of requested times.
+`msmi.plot` visualizes the returned estimates and associated confidence regions
+on the probability simplex.
 
 This is a basic example which shows you how to use the `msmi.impute`
 function with simulated data `sim.data`:
@@ -38,7 +46,8 @@ head(sim.data)
 #> 5  5 2.50932926      1 4.49595865      1 2.50932926  8.355165  1.986629
 #> 6  6 0.09055337      0 0.09055337      0 5.63360549  6.239124  2.886236
 
-head(msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")[[1]])
+imps <- msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"), method = "marginal")
+head(imps[[1]])
 #>           t1 event1        t2 event2
 #> 1 3.81009456      1  9.358730      1
 #> 2 0.05423889      1  5.290110      1
@@ -47,3 +56,19 @@ head(msmi.impute(sim.data, M = 5, n.states = 3, prefix.states = c("event", "t"),
 #> 5 2.50932926      1  4.495959      1
 #> 6 4.21332332      1 10.567040      1
 ```
+
+Now we can use `msmi.tprobs` to estimate the state occupation probabilities at time 4 and 'msmi.plot` to visualize the results :
+
+```r
+tprobs <- msmi.tprobs.v2(imps, times = c(2,4))
+
+print(trpobs$mi_estimate)
+
+msmi.plot(tprobs, 4)
+```
+
+## References
+
+This work is currently ongoing. A reference to the method paper will be added when available.
+
+
