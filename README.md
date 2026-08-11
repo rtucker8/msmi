@@ -10,7 +10,9 @@
 The goal of msmi is to use tools from multiple imputation to handle
 missing data present in multistate models subject to censoring and
 estimate state occupation probabilities from these data. Currently, msmi is
-only suitable for the irreversible illness-death model.
+only suitable for the irreversible illness-death model. We anticipate that
+the imputed datasets will be useful to problems that do not easily accomodate
+censoring.
 
 ## Installation
 
