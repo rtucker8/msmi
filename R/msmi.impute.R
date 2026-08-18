@@ -26,15 +26,12 @@ cox_mi <- function(d, bootstrap = TRUE) {
   #Take boostrap sample
   if (bootstrap) {
     boot <- u[sample(1:nrow(u), replace = TRUE), ]
-    # u_complete <- u[u$event2 == 1 & u$event2 == 1, ]
-    # u_incomplete <- u[!(u$event1 == 1 & u$event2 == 1), ]
 
-    # boot_complete <- u_complete[sample(1:nrow(u_complete), replace = TRUE), ]
-    # boot_incomplete <- u_incomplete[
-    #   sample(1:nrow(u_incomplete), replace = TRUE),
-    # ]
+    #Gaurd: bootstrap sample has less than 5 observed transitions
+    #switch to a marginal imputation strategy using this bootstrap dataset
 
-    # boot <- dplyr::bind_rows(boot_complete, boot_incomplete)
+    #Gaurd: bootstrap sample has no observed transitions
+    #impute a shadow time
   } else {
     boot <- u
   }
@@ -138,6 +135,11 @@ marginal_mi <- function(d, bootstrap = TRUE) {
   dd <- d[d$event2 == 0, ]
   xt <- dd$t2 - dd$t1
 
+  # Guard: nothing to impute for this iteration
+  if (nrow(dd) == 0) {
+    return(d %>% dplyr::select(-id))
+  }
+
   #  Impute shadow time if no observed transitions
   if (nrow(d[d$event1 == 1 & d$event2 == 1, ]) == 0) {
     t_shadow <- max(u$sojourn23) + 1
@@ -155,15 +157,8 @@ marginal_mi <- function(d, bootstrap = TRUE) {
     if (bootstrap) {
       boot <- u[sample(1:nrow(u), replace = TRUE), ]
 
-      # u_complete <- u[u$event2 == 1 & u$event2 == 1, ]
-      # u_incomplete <- u[!(u$event1 == 1 & u$event2 == 1), ]
-
-      # boot_complete <- u_complete[sample(1:nrow(u_complete), replace = TRUE), ]
-      # boot_incomplete <- u_incomplete[
-      #   sample(1:nrow(u_incomplete), replace = TRUE),
-      # ]
-
-      # boot <- dplyr::bind_rows(boot_complete, boot_incomplete)
+      #Gaurd: bootstrap sample has no observed transitions
+      #impute a shadow time
     } else {
       boot <- u
     }
