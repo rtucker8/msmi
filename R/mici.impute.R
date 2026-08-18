@@ -94,7 +94,7 @@ mici.impute <- function(
             Imputation was not needed."
     )
     ipd <- select(u, -id)
-    myimps <- list(ipd)
+    myimps <- rep(list(ipd), M)
 
     return(myimps)
   }
@@ -111,65 +111,76 @@ mici.impute <- function(
       boot_dc <- dc
     }
 
-    #KM Fit
-    g <- summary(survfit(
-      Surv(ftime, ftype != 0) ~ 1,
-      data = boot,
-      timefix = FALSE
-    ))
-    gm <- g$surv[length(g$surv)]
-    w <- g$time
-    wp <- -diff(c(1, g$surv))
+    #Gaurd: bootstrap sample has no observed transitions
+    if (nrow(boot[boot$ftype != 0, ]) == 0) {
+      #impute a shadow time
+      dd$ftime <- max(u$ftime) + 1
+      dd$ftype <- resample(c(1:2), size = 1)
 
-    if (gm > 0) {
-      wp <- c(wp, gm)
-      w <- c(w, max(u$ftime) + 1) #shadow time from original dataset
-    }
+      ipd <- bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
 
-    cts <- NULL
-    cevent <- NULL
-    for (jj in 1:length(xt)) {
-      sub <- w > xt[jj]
+      myimps <- append(myimps, list(ipd))
+    } else {
+      #KM Fit
+      g <- summary(survfit(
+        Surv(ftime, ftype != 0) ~ 1,
+        data = boot,
+        timefix = FALSE
+      ))
+      gm <- g$surv[length(g$surv)]
+      w <- g$time
+      wp <- -diff(c(1, g$surv))
 
-      #Impute event times and types
       if (gm > 0) {
-        if (length(w[sub]) == 1) {
-          cts[jj] <- w[sub]
-          cevent[jj] <- resample(c(1:2), size = 1)
-        } else {
-          cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
-          if (cts[jj] <= max(boot_dc$ftime)) {
-            cevent[jj] <-
-              resample(boot_dc$ftype[near(boot_dc$ftime, cts[jj])], size = 1)
-          } else {
+        wp <- c(wp, gm)
+        w <- c(w, max(u$ftime) + 1) #shadow time from original dataset
+      }
+
+      cts <- NULL
+      cevent <- NULL
+      for (jj in 1:length(xt)) {
+        sub <- w > xt[jj]
+
+        #Impute event times and types
+        if (gm > 0) {
+          if (length(w[sub]) == 1) {
+            cts[jj] <- w[sub]
             cevent[jj] <- resample(c(1:2), size = 1)
+          } else {
+            cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
+            if (cts[jj] <= max(boot_dc$ftime)) {
+              cevent[jj] <-
+                resample(boot_dc$ftype[near(boot_dc$ftime, cts[jj])], size = 1)
+            } else {
+              cevent[jj] <- resample(c(1:2), size = 1)
+            }
+          }
+        } else {
+          if (length(w[sub]) == 0) {
+            cts[jj] <- max(u$ftime) + 1 #shadow time from original dataset (not bootstrap)
+            cevent[jj] <- resample(c(1:2), size = 1)
+          } else if (length(w[sub]) == 1) {
+            cts[jj] <- w[sub]
+            cevent[jj] <- resample(
+              boot_dc$ftype[near(boot_dc$ftime, cts[jj])],
+              size = 1
+            )
+          } else {
+            cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
+            cevent[jj] <- resample(
+              boot_dc$ftype[near(boot_dc$ftime, cts[jj])],
+              size = 1
+            )
           }
         }
-      } else {
-        if (length(w[sub]) == 0) {
-          cts[jj] <- max(u$ftime) + 1 #shadow time from original dataset (not bootstrap)
-          cevent[jj] <- resample(c(1:2), size = 1)
-        } else if (length(w[sub]) == 1) {
-          cts[jj] <- w[sub]
-          cevent[jj] <- resample(
-            boot_dc$ftype[near(boot_dc$ftime, cts[jj])],
-            size = 1
-          )
-        } else {
-          cts[jj] <- resample(w[sub], 1, replace = TRUE, prob = wp[sub])
-          cevent[jj] <- resample(
-            boot_dc$ftype[near(boot_dc$ftime, cts[jj])],
-            size = 1
-          )
-        }
       }
+
+      dd$ftime <- cts
+      dd$ftype <- cevent
+      ipd <- bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
+
+      myimps <- append(myimps, list(ipd))
     }
-
-    dd$ftime <- cts
-    dd$ftype <- cevent
-    ipd <- bind_rows(dd, dc) %>% arrange(id) %>% select(-id)
-
-    myimps <- append(myimps, list(ipd))
   }
 
   return(myimps)
