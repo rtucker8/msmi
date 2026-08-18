@@ -43,9 +43,9 @@ cox_mi <- function(d, bootstrap = TRUE) {
       dplyr::select(-id)
 
     return(ipd)
-  } else if (nrow(boot[boot$event2 == 1, ]) <= 5) {
+  } else if (nrow(boot[boot$event2 == 1, ]) < 10) {
     warning(
-      "There are very few uncensored observations after the first round of imputation for this dataset.
+      "There are less than 10 uncensored observations after the first round of imputation for this dataset.
                 Cox imputation models may have trouble converging. Changing to the marginal imputation method instead."
     )
 
