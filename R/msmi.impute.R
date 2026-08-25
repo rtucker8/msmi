@@ -43,138 +43,180 @@ cox_mi <- function(d, bootstrap = TRUE) {
       dplyr::select(-id)
 
     return(ipd)
-  } else if (nrow(boot[boot$event2 == 1, ]) < 10) {
-    warning(
-      "There are less than 10 uncensored observations after the first round of imputation for this dataset.
-                Cox imputation models may have trouble converging. Changing to the marginal imputation method instead."
-    )
-
-    km_summary <- summary(survival::survfit(
-      survival::Surv(sojourn23, event2) ~ 1,
-      data = boot,
-      timefix = FALSE
-    ))
-    surv_probs <- km_summary$surv[length(km_summary$surv)]
-    surv_times <- km_summary$time
-    prob_diffs <- -diff(c(1, km_summary$surv))
-
-    # Handle tail probability (if survival doesn't reach 0)
-    if (surv_probs > 0) {
-      prob_diffs <- c(prob_diffs, surv_probs)
-      surv_times <- c(surv_times, t_shadow) #shadow time from original dataset (not boostrap sample)
-    }
-
-    # Impute times for censored individuals
-    cts <- NULL
-    for (jj in seq_along(xt)) {
-      # Find times greater than censoring time
-      sub <- surv_times > xt[jj]
-
-      # Sample time from illness to death
-      if (sum(sub) > 1) {
-        cts[jj] <- resample(
-          surv_times[sub],
-          1,
-          replace = TRUE,
-          prob = prob_diffs[sub]
-        )
-      } else if (sum(sub) == 1) {
-        cts[jj] <- surv_times[sub]
-      } else {
-        cts[jj] <- t_shadow
-      }
-    }
-
-    # Update death time and event indicator
-    dd$event2 <- 1
-    dd$t2 <- dd$t1 + cts
-    ipd <- dplyr::bind_rows(dd, dc) %>%
-      dplyr::arrange(id) %>%
-      dplyr::select(-id)
-
-    return(ipd)
   } else {
-    #Estimate Survival function for ill to death sojourn time using coxph model with t1 as a covariate
-    #each person has their own survival curve based on their time to illness
-    cox_model <- survival::coxph(
-      survival::Surv(t2 - t1, event2) ~ t1,
-      data = boot
-    )
-    surv_summary <- summary(survival::survfit(cox_model, newdata = dd))
+    cox_warning <- FALSE
 
-    if (nrow(dd) > 1) {
-      surv_probs <- surv_summary$surv[dim(surv_summary$surv)[1], ]
-    } else if (nrow(dd) == 1) {
-      surv_probs <- surv_summary$surv[length(surv_summary$surv)]
-    }
-
-    surv_times <- surv_summary$time
-    surv_times_list <- replicate(
-      length(surv_probs),
-      surv_times,
-      simplify = FALSE
-    )
-
-    if (nrow(dd) > 1) {
-      prob_diffs <- apply(surv_summary$surv, 2, function(x) -diff(c(1, x)))
-      prob_diffs_list <- split(prob_diffs, col(prob_diffs))
-    } else if (nrow(dd) == 1) {
-      prob_diffs <- -diff(c(1, surv_summary$surv))
-      prob_diffs_list <- list(prob_diffs)
-    }
-
-    # Handle tail probability (if survival doesn't reach 0)
-    tail.probs <- function(tail, probs) {
-      if (tail > 0) {
-        probs <- c(probs, tail)
-      }
-      return(probs)
-    }
-
-    tail.times <- function(tail, times) {
-      if (tail > 0) {
-        times <- c(times, t_shadow)
-      }
-      return(times)
-    }
-
-    prob_diffs <- Map(tail.probs, tail = surv_probs, probs = prob_diffs_list) #output is a list of length nrow(dd)
-
-    surv_times <- Map(tail.times, surv_probs, surv_times_list) #output is a list of length nrow(dd)
-
-    # Impute times for censored individuals
-    cts <- NULL
-    for (jj in seq_along(xt)) {
-      # Find times greater than censoring time
-      sub <- surv_times[[jj]] > xt[jj]
-
-      #ensure at least one positive probability
-      if (sum(prob_diffs[[jj]][sub]) == 0) {
-        prob_diffs[[jj]][sub][1] <- 1
-      }
-
-      # Sample time from illness to death
-      if (sum(sub) > 1) {
-        cts[jj] <- resample(
-          surv_times[[jj]][sub],
-          1,
-          replace = TRUE,
-          prob = prob_diffs[[jj]][sub]
+    cox_model <- tryCatch(
+      {
+        withCallingHandlers(
+          survival::coxph(
+            survival::Surv(t2 - t1, event2) ~ t1,
+            data = boot
+          ),
+          warning = function(w) {
+            if (
+              grepl(
+                "Ran out of iterations and did not converge",
+                warning_message,
+                fixed = TRUE
+              ) ||
+                grepl(
+                  "one or more coefficients may be infinite",
+                  warning_message,
+                  fixed = TRUE
+                )
+            ) {
+              cox_warning <<- TRUE
+              invokeRestart("muffleWarning")
+            }
+          }
         )
-      } else if (sum(sub) == 1) {
-        cts[jj] <- surv_times[[jj]][sub]
-      } else {
-        cts[jj] <- t_shadow
+      },
+      error = function(e) {
+        cox_warning <<- TRUE
+        NULL
       }
-    }
-    # Update data
-    dd$event2 <- 1
-    dd$t2 <- dd$t1 + cts
-    ipd <- dplyr::bind_rows(dd, dc) %>%
-      dplyr::arrange(id) %>%
-      dplyr::select(-id)
+    )
 
-    return(ipd)
+    if (!cox_warning) {
+      #Estimate Survival function for ill to death sojourn time using coxph model with t1 as a covariate
+      #each person has their own survival curve based on their time to illness
+
+      surv_summary <- summary(survival::survfit(cox_model, newdata = dd))
+
+      surv <- as.matrix(surv_summary$surv)
+
+      n_times <- nrow(surv)
+      n_curves <- ncol(surv)
+
+      surv_probs <- surv[n_times, ]
+
+      surv_times_list <- replicate(
+        n_curves,
+        surv_summary$time,
+        simplify = FALSE
+      )
+
+      prob_diffs <- apply(
+        surv,
+        2,
+        function(x) -diff(c(1, x))
+      )
+
+      prob_diffs <- matrix(
+        prob_diffs,
+        nrow = n_times,
+        ncol = n_curves,
+        byrow = FALSE
+      )
+
+      prob_diffs_list <- lapply(
+        seq_len(n_curves),
+        function(j) prob_diffs[, j]
+      )
+
+      # Handle tail probability (if survival doesn't reach 0)
+      tail.probs <- function(tail, probs) {
+        if (tail > 0) {
+          probs <- c(probs, tail)
+        }
+        return(probs)
+      }
+
+      tail.times <- function(tail, times) {
+        if (tail > 0) {
+          times <- c(times, t_shadow)
+        }
+        return(times)
+      }
+
+      prob_diffs <- Map(tail.probs, tail = surv_probs, probs = prob_diffs_list) #output is a list of length nrow(dd)
+
+      surv_times <- Map(tail.times, surv_probs, surv_times_list) #output is a list of length nrow(dd)
+
+      # Impute times for censored individuals
+      cts <- NULL
+      for (jj in seq_along(xt)) {
+        # Find times greater than censoring time
+        sub <- surv_times[[jj]] > xt[jj]
+
+        #ensure at least one positive probability
+        if (sum(prob_diffs[[jj]][sub]) == 0) {
+          prob_diffs[[jj]][sub][1] <- 1
+        }
+
+        # Sample time from illness to death
+        if (sum(sub) > 1) {
+          cts[jj] <- resample(
+            surv_times[[jj]][sub],
+            1,
+            replace = TRUE,
+            prob = prob_diffs[[jj]][sub]
+          )
+        } else if (sum(sub) == 1) {
+          cts[jj] <- surv_times[[jj]][sub]
+        } else {
+          cts[jj] <- t_shadow
+        }
+      }
+      # Update data
+      dd$event2 <- 1
+      dd$t2 <- dd$t1 + cts
+      ipd <- dplyr::bind_rows(dd, dc) %>%
+        dplyr::arrange(id) %>%
+        dplyr::select(-id)
+
+      return(ipd)
+    } else {
+      warning(
+        "The Cox imputation model did not converge. Changing to the marginal imputation method instead."
+      )
+
+      km_summary <- summary(survival::survfit(
+        survival::Surv(sojourn23, event2) ~ 1,
+        data = boot,
+        timefix = FALSE
+      ))
+      surv_probs <- km_summary$surv[length(km_summary$surv)]
+      surv_times <- km_summary$time
+      prob_diffs <- -diff(c(1, km_summary$surv))
+
+      # Handle tail probability (if survival doesn't reach 0)
+      if (surv_probs > 0) {
+        prob_diffs <- c(prob_diffs, surv_probs)
+        surv_times <- c(surv_times, t_shadow) #shadow time from original dataset (not boostrap sample)
+      }
+
+      # Impute times for censored individuals
+      cts <- NULL
+      for (jj in seq_along(xt)) {
+        # Find times greater than censoring time
+        sub <- surv_times > xt[jj]
+
+        # Sample time from illness to death
+        if (sum(sub) > 1) {
+          cts[jj] <- resample(
+            surv_times[sub],
+            1,
+            replace = TRUE,
+            prob = prob_diffs[sub]
+          )
+        } else if (sum(sub) == 1) {
+          cts[jj] <- surv_times[sub]
+        } else {
+          cts[jj] <- t_shadow
+        }
+      }
+
+      # Update death time and event indicator
+      dd$event2 <- 1
+      dd$t2 <- dd$t1 + cts
+      ipd <- dplyr::bind_rows(dd, dc) %>%
+        dplyr::arrange(id) %>%
+        dplyr::select(-id)
+
+      return(ipd)
+    }
   }
 }
 
@@ -286,6 +328,7 @@ marginal_mi <- function(d, bootstrap = TRUE) {
 #' @param prefix.states a character vector of length 2, specify the prefix for the event and time columns in the data in that order
 #' @param method a character string, either "marginal" or "cox" indicating which method to use for the second layer of imputation
 #' @param seed an integer, the seed for random number generation
+#' @param bootstrap a boolean, if TRUE, the bootstrap step is incorporated into the imputation proceedure
 #' @examples
 #' msmi.impute(sim.data, M = 5, prefix.states = c("event", "t"), method = "marginal")
 #' @returns A list of length M, where each element is a data frame with imputed times for censored events
